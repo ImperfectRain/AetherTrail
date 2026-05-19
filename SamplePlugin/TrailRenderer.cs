@@ -33,6 +33,8 @@ public class TrailRenderer
     private const double PathTransitionSeconds = 0.22;
 
     private const float HidePassedDistance = 2.5f;
+    private const int MaxRenderedTrailPoints = 140;
+    private const float MinimumRenderedPointSpacing = 3.5f;
 
     public void SetPath(TrailPath path)
     {
@@ -45,7 +47,7 @@ public class TrailRenderer
                 ),
                 2
             ),
-            2.0f
+            3.0f
         );
 
         if (PathsAreVisuallySimilar(this.smoothedPath, newPath, 1.25f))
@@ -105,10 +107,11 @@ public class TrailRenderer
         var playerPos = player.Position;
 
         var displayPath = GetDisplayPath();
+        var renderedPath = ThinDisplayPath(displayPath, MaxRenderedTrailPoints, MinimumRenderedPointSpacing);
 
-        for (int i = 0; i < displayPath.Count; i++)
+        for (int i = 0; i < renderedPath.Count; i++)
         {
-            var point = displayPath[i];
+            var point = renderedPath[i];
             Vector3 worldPos = point.Position;
 
             if (Vector3.Distance(playerPos, worldPos) < HidePassedDistance)
@@ -129,6 +132,39 @@ public class TrailRenderer
                 drawList.AddCircleFilled(screenPos, radius, color);
             }
         }
+    }
+
+    private static List<TrailPoint> ThinDisplayPath(
+    List<TrailPoint> path,
+    int maxPoints,
+    float minimumSpacing)
+    {
+        if (path.Count <= maxPoints)
+            return path;
+
+        List<TrailPoint> result = new();
+
+        Vector3? lastAddedPosition = null;
+
+        foreach (var point in path)
+        {
+            if (lastAddedPosition.HasValue &&
+                Vector3.Distance(lastAddedPosition.Value, point.Position) < minimumSpacing)
+            {
+                continue;
+            }
+
+            result.Add(point);
+            lastAddedPosition = point.Position;
+
+            if (result.Count >= maxPoints)
+                break;
+        }
+
+        if (result.Count == 0 || result[^1].Position != path[^1].Position)
+            result.Add(path[^1]);
+
+        return result;
     }
 
     private static bool PathIsMostlyGraph(List<TrailPoint> path)

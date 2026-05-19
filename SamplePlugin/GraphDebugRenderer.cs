@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -7,8 +8,6 @@ namespace AetherTrail;
 public class GraphDebugRenderer
 {
     public bool Enabled;
-
-    
 
     public void Draw()
     {
@@ -38,11 +37,14 @@ public class GraphDebugRenderer
 
             bool isolated = node.Links.Count == 0;
 
-            uint nodeColor = ImGui.ColorConvertFloat4ToU32(
-                isolated
-                    ? new Vector4(1.0f, 0.2f, 0.2f, 0.9f)
-                    : new Vector4(0.2f, 1.0f, 0.3f, 0.9f)
-            );
+            int averageConfidence = 1;
+
+            if (node.LinkConfidence.Count > 0)
+                averageConfidence = (int)Math.Round(node.LinkConfidence.Values.Average());
+
+            uint nodeColor = isolated
+                ? ImGui.ColorConvertFloat4ToU32(new Vector4(1.0f, 0.2f, 0.2f, 0.9f))
+                : GetConfidenceColor(averageConfidence, 0.9f);
 
             drawList.AddCircleFilled(nodeScreen, isolated ? 6f : 4f, nodeColor);
 
@@ -61,12 +63,28 @@ public class GraphDebugRenderer
                 if (!Plugin.GameGui.WorldToScreen(linkedWorld, out Vector2 linkedScreen))
                     continue;
 
-                uint linkColor = ImGui.ColorConvertFloat4ToU32(
-                    new Vector4(0.2f, 1.0f, 0.3f, 0.35f)
-                );
+                int linkConfidence = node.LinkConfidence.TryGetValue(linkId, out int value)
+                    ? value
+                    : 1;
+
+                uint linkColor = GetConfidenceColor(linkConfidence, 0.35f);
 
                 drawList.AddLine(nodeScreen, linkedScreen, linkColor, 2f);
             }
         }
+    }
+
+    private static uint GetConfidenceColor(int confidence, float alpha)
+    {
+        confidence = Math.Clamp(confidence, 1, 6);
+
+        float t = (confidence - 1) / 5f;
+        float red = 1f - (0.8f * t);
+        float green = 1f;
+        float blue = 0f;
+
+        return ImGui.ColorConvertFloat4ToU32(
+            new Vector4(red, green, blue, alpha)
+        );
     }
 }

@@ -9,4 +9,5 @@ public sealed class GraphPruneResult
     public int MergedDuplicateNodes { get; init; }
     public int RemainingNodes { get; init; }
     public int RemainingLinks { get; init; }
+    public int RemovedFlightNodes { get; init; }
 }

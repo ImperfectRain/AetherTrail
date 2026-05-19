@@ -10,4 +10,6 @@ public sealed class NavNode
     public List<string> Links { get; init; } = new();
 
     public Dictionary<string, int> LinkConfidence { get; init; } = new();
+
+    public NavTraversalMode TraversalMode { get; init; } = NavTraversalMode.Ground;
 }

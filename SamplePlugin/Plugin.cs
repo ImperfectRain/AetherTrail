@@ -26,6 +26,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     private const string CommandName = "/trailflag";
     private const string DebugCommandName = "/atraildebug";
@@ -37,10 +38,12 @@ public sealed class Plugin : IDalamudPlugin
     private const string ExportCommandName = "/atrailexport";
     private const string ImportCommandName = "/atrailimport";
     private const string PruneCommandName = "/atrailprune";
+    private const string CleanFlightCommandName = "/atrailcleanflight";
     private const string QuestDebugCommandName = "/atrailquestdebug";
     private const string SyncExportCommandName = "/atrailsyncexport";
     private const string SyncImportCommandName = "/atrailsyncimport";
     private const string SyncPreviewCommandName = "/atrailsyncpreview";
+    private const string MapCommandName = "/atrailmap";
 
     private bool trailEnabled;
     private bool recordingEnabled;
@@ -51,19 +54,22 @@ public sealed class Plugin : IDalamudPlugin
     private readonly PartySyncService partySyncService = new();
 
     private DateTime lastPathUpdate = DateTime.MinValue;
-    private const double PathUpdateIntervalSeconds = 0.08;
+    private const double PathUpdateIntervalSeconds = 0.20;
     private Vector3? lastTargetPosition;
     private DateTime lastForcedPathRefresh = DateTime.MinValue;
 
     private const float TargetChangedDistance = 3.0f;
-    private const float RouteDeviationDistance = 4.0f;
-    private const double ForcedPathRefreshSeconds = 0.75;
+    private const float RouteDeviationDistance = 10.0f;
+    private const double ForcedPathRefreshSeconds = 1.5;
 
     public Configuration Configuration { get; init; }
 
     public readonly WindowSystem WindowSystem = new("AetherTrail");
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
+    private MapWindow MapWindow { get; init; }
+
+
 
     public Plugin()
     {
@@ -83,9 +89,11 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow = new ConfigWindow(this);
         MainWindow = new MainWindow(this, goatImagePath);
+        MapWindow = new MapWindow(this);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
+        WindowSystem.AddWindow(MapWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -129,6 +137,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Clean up the current territory's AetherTrail graph."
         });
+        CommandManager.AddHandler(CleanFlightCommandName, new CommandInfo(OnCleanFlightCommand)
+        {
+            HelpMessage = "Remove flight-mode nodes from the current AetherTrail graph."
+        });
         CommandManager.AddHandler(QuestDebugCommandName, new CommandInfo(OnQuestDebugCommand)
         {
             HelpMessage = "Print AetherTrail quest debug info."
@@ -145,6 +157,10 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.AddHandler(SyncPreviewCommandName, new CommandInfo(OnSyncPreviewCommand)
         {
             HelpMessage = "Preview an AetherTrail sync packet before importing."
+        });
+        CommandManager.AddHandler(MapCommandName, new CommandInfo(OnMapCommand)
+        {
+            HelpMessage = "Open the AetherTrail graph map."
         });
 
 
@@ -165,6 +181,7 @@ public sealed class Plugin : IDalamudPlugin
 
         ConfigWindow.Dispose();
         MainWindow.Dispose();
+        MapWindow.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
         CommandManager.RemoveHandler(DebugCommandName);
@@ -180,6 +197,8 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(SyncExportCommandName);
         CommandManager.RemoveHandler(SyncImportCommandName);
         CommandManager.RemoveHandler(SyncPreviewCommandName);
+        CommandManager.RemoveHandler(CleanFlightCommandName);
+        CommandManager.RemoveHandler(MapCommandName);
 
         Log.Information("AetherTrail unloaded.");
     }
@@ -347,6 +366,18 @@ public sealed class Plugin : IDalamudPlugin
         PruneCurrentTerritoryGraph();
     }
 
+    private void OnCleanFlightCommand(string command, string args)
+    {
+        uint territoryId = ClientState.TerritoryType;
+
+        var result = NavigationManager.CleanFlightNodes(territoryId);
+
+        ChatGui.Print(
+            $"AetherTrail flight cleanup: removed {result.RemovedFlightNodes} flight nodes. " +
+            $"Remaining: {result.RemainingNodes} nodes, {result.RemainingLinks} links."
+        );
+    }
+
     private void OnQuestDebugCommand(string command, string args)
     {
         uint questId = QuestService.GetTrackedQuestId();
@@ -397,6 +428,11 @@ public sealed class Plugin : IDalamudPlugin
             $"RejectedInvalid={preview.RejectedInvalidNodes}, " +
             $"RejectedOutOfBounds={preview.RejectedOutOfBoundsNodes}"
         );
+    }
+
+    private void OnMapCommand(string command, string args)
+    {
+        MapWindow.Toggle();
     }
 
     private void PrintTypeMembers(Type type)

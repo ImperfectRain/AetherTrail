@@ -1,9 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Text.Json;
-using System.Linq;
+using static FFXIVClientStructs.FFXIV.Component.GUI.AtkTimer.Delegates;
 
 namespace AetherTrail;
 
@@ -194,6 +195,48 @@ public static class NavigationManager
         };
     }
 
+    public static GraphPruneResult CleanFlightNodes(uint territoryId)
+    {
+        var graph = GetOrLoadGraph(territoryId);
+
+        int originalNodeCount = graph.Nodes.Count;
+
+        graph.Nodes.RemoveAll(node => node.TraversalMode == NavTraversalMode.Flight);
+
+        var validIds = graph.Nodes
+            .Select(node => node.Id)
+            .ToHashSet();
+
+        foreach (var node in graph.Nodes)
+        {
+            node.Links.RemoveAll(linkId => !validIds.Contains(linkId));
+
+            foreach (var key in node.LinkConfidence.Keys.ToList())
+            {
+                if (!validIds.Contains(key))
+                    node.LinkConfidence.Remove(key);
+            }
+        }
+
+        int removedFlightNodes = originalNodeCount - graph.Nodes.Count;
+
+        SaveGraph(territoryId, graph);
+
+        var result = PruneGraph(territoryId);
+
+        return new GraphPruneResult
+        {
+            RemovedFlightNodes = removedFlightNodes,
+            RemovedIsolatedNodes = result.RemovedIsolatedNodes,
+            RemovedBrokenLinks = result.RemovedBrokenLinks,
+            RemovedSelfLinks = result.RemovedSelfLinks,
+            RemovedDuplicateLinks = result.RemovedDuplicateLinks,
+            MergedDuplicateNodes = result.MergedDuplicateNodes,
+            RemainingNodes = result.RemainingNodes,
+            RemainingLinks = result.RemainingLinks
+        };
+    }
+
     private static int MergeDuplicateNodes(NavGraph graph)
     {
         const float mergeDistance = 2.0f;
@@ -288,6 +331,11 @@ public static class NavigationManager
     public static TrailPath GetPath(uint territoryId, Vector3 start, Vector3 end)
     {
         var graph = GetOrLoadGraph(territoryId);
+
+        if (IsPlayerFlying())
+            return BuildDirectPath(start, end);
+
+        graph = BuildModeFilteredGraph(graph, NavTraversalMode.Ground);
 
         if (graph.Nodes.Count < 2)
             return BuildDirectPath(start, end);
@@ -385,6 +433,9 @@ public static class NavigationManager
 
     private static void LinkNodes(NavNode a, NavNode b)
     {
+        if (a.TraversalMode != b.TraversalMode)
+            return;
+
         if (!IsTraversableLink(a.Position, b.Position))
             return;
 
@@ -403,7 +454,7 @@ public static class NavigationManager
         if (!node.LinkConfidence.ContainsKey(linkedNodeId))
             node.LinkConfidence[linkedNodeId] = 0;
 
-        node.LinkConfidence[linkedNodeId]++;
+        node.LinkConfidence[linkedNodeId] += 2;
     }
 
     private static bool IsTraversableLink(Vector3 a, Vector3 b)
@@ -473,6 +524,8 @@ public static class NavigationManager
     public static void RecordPlayerPosition(uint territoryId, Vector3 position)
     {
         var graph = GetOrLoadGraph(territoryId);
+
+      
 
         if (territoryId != LastTerritoryId)
         {
@@ -547,11 +600,16 @@ public static class NavigationManager
 
         string newId = $"{territoryId}_{graph.Nodes.Count + 1:D6}";
 
+        var traversalMode = IsPlayerFlying()
+            ? NavTraversalMode.Flight
+            : NavTraversalMode.Ground;
+
         var newNode = new NavNode
         {
             Id = newId,
             Position = position,
-            Links = new List<string>()
+            Links = new List<string>(),
+            TraversalMode = traversalMode
         };
 
         if (LastRecordedNodeId != null)
@@ -581,6 +639,37 @@ public static class NavigationManager
         LastRecordedNodeId = newNode.Id;
 
         SaveGraph(territoryId, graph);
+    }
+
+    private static NavGraph BuildModeFilteredGraph(NavGraph source, NavTraversalMode mode)
+    {
+        var result = new NavGraph();
+
+        var allowedIds = source.Nodes
+            .Where(node => node.TraversalMode == mode)
+            .Select(node => node.Id)
+            .ToHashSet();
+
+        foreach (var node in source.Nodes)
+        {
+            if (!allowedIds.Contains(node.Id))
+                continue;
+
+            result.Nodes.Add(new NavNode
+            {
+                Id = node.Id,
+                Position = node.Position,
+                TraversalMode = node.TraversalMode,
+                Links = node.Links
+                    .Where(linkId => allowedIds.Contains(linkId))
+                    .ToList(),
+                LinkConfidence = node.LinkConfidence
+                    .Where(pair => allowedIds.Contains(pair.Key))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value)
+            });
+        }
+
+        return result;
     }
 
     public static bool ExportGraph(uint territoryId, out string exportPath)
@@ -1006,5 +1095,10 @@ public static class NavigationManager
         SaveGraph(packet.TerritoryId, graph);
 
         return imported;
+    }
+
+    private static bool IsPlayerFlying()
+    {
+        return Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight];
     }
 }
