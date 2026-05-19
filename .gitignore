@@ -1,0 +1,14 @@
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+
+pluginConfigs/
+Graphs/
+Exports/
+Imports/
+SyncIn/
+SyncOut/
