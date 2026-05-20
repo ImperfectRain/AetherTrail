@@ -816,8 +816,13 @@ public static class NavigationManager
                position.Z <= maxZ;
     }
 
-    private static int MergeGraph(NavGraph currentGraph, NavGraph importedGraph)
+    private static int MergeGraph(NavGraph currentGraph, NavGraph importedGraph, bool allowOutOfBounds = false)
     {
+        int rejectedInvalid = 0;
+        int rejectedOutOfBounds = 0;
+        int duplicateNodes = 0;
+        int addedNodes = 0;
+
         const float mergeDistance = 2.5f;
 
         Dictionary<string, string> idMap = new();
@@ -826,16 +831,23 @@ public static class NavigationManager
         foreach (var importedNode in importedGraph.Nodes)
         {
             if (!IsValidNodePosition(importedNode.Position))
+            {
+                rejectedInvalid++;
                 continue;
+            }
 
-            if (!IsInsideKnownGraphBounds(currentGraph, importedNode.Position))
+            if (!allowOutOfBounds && !IsInsideKnownGraphBounds(currentGraph, importedNode.Position))
+            {
+                rejectedOutOfBounds++;
                 continue;
+            }
 
             var existingNode = currentGraph.GetNearestNode(importedNode.Position, mergeDistance);
 
             if (existingNode != null)
             {
                 idMap[importedNode.Id] = existingNode.Id;
+                duplicateNodes++;
                 continue;
             }
 
@@ -845,12 +857,14 @@ public static class NavigationManager
             {
                 Id = newId,
                 Position = importedNode.Position,
+                TraversalMode = importedNode.TraversalMode,
                 Links = new List<string>()
             };
 
             currentGraph.AddNode(newNode);
             idMap[importedNode.Id] = newId;
             importedCount++;
+            addedNodes++;
         }
 
         foreach (var importedNode in importedGraph.Nodes)
@@ -875,6 +889,22 @@ public static class NavigationManager
 
                 LinkNodes(sourceNode, targetNode);
             }
+        }
+
+        Plugin.ChatGui.Print(
+            $"[AetherTrail Import Debug] Incoming={importedGraph.Nodes.Count}, " +
+            $"Added={addedNodes}, Duplicates={duplicateNodes}, " +
+            $"Invalid={rejectedInvalid}, OutOfBounds={rejectedOutOfBounds}"
+    );
+
+        if (importedGraph.Nodes.Count > 0)
+        {
+            var first = importedGraph.Nodes[0].Position;
+
+            Plugin.ChatGui.Print(
+                $"[AetherTrail Import Debug] First imported pos: " +
+                $"{first.X:F2}, {first.Y:F2}, {first.Z:F2}"
+            );
         }
 
         return importedCount;
@@ -1137,7 +1167,11 @@ public static class NavigationManager
     {
         var graph = GetOrLoadGraph(packet.TerritoryId);
 
-        int imported = MergeGraph(graph, packet.Graph);
+        int imported = MergeGraph(
+            graph,
+            packet.Graph,
+            allowOutOfBounds: true
+        );
 
         SaveGraph(packet.TerritoryId, graph);
 
