@@ -69,6 +69,21 @@ public class MainWindow : Window, IDisposable
             config.Save();
         }
 
+        string syncServerUrl = this.plugin.Configuration.SyncServerUrl;
+
+        ImGui.Text("Sync Server URL");
+
+        if (ImGui.InputText("##SyncServerUrl", ref syncServerUrl, 256))
+        {
+            if (ImGui.Button("Use Default Cloudflare Server"))
+            {
+                this.plugin.Configuration.SyncServerUrl = "https://aethertrailsyncserver.loplop6754loplop.workers.dev";
+                this.plugin.Configuration.Save();
+            }
+            this.plugin.Configuration.SyncServerUrl = syncServerUrl.Trim();
+            this.plugin.Configuration.Save();
+        }
+
         string roomCode = config.SyncRoomCode;
         ImGui.InputText("Room Code", ref roomCode, 32);
 

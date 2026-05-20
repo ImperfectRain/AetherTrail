@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace AetherTrail;
@@ -8,6 +9,52 @@ public sealed class PartySyncService
     private DateTime lastSync = DateTime.MinValue;
     private bool syncing;
 
+    private static string GetOrCreateSenderId()
+    {
+        var config = Plugin.Instance.Configuration;
+
+        if (!string.IsNullOrWhiteSpace(config.SyncClientId))
+            return config.SyncClientId;
+
+        config.SyncClientId = Guid.NewGuid().ToString("N");
+        config.Save();
+
+        return config.SyncClientId;
+    }
+
+    private static async Task SyncPresence(PartySyncPresence? localPresence, uint territoryId)
+    {
+        if (localPresence != null)
+            await GraphSyncHttpClient.UploadPresenceAsync(localPresence);
+
+        var presences = await GraphSyncHttpClient.DownloadPresenceAsync(territoryId);
+
+        string selfId = Plugin.Instance.Configuration.SyncClientId;
+
+        PartyPresenceService.UpdatePresences(
+            presences.Where(presence => presence.SenderId != selfId)
+        );
+    }
+
+    private static PartySyncPresence? CreateLocalPresenceSnapshot(uint territoryId)
+    {
+        var player = Plugin.ObjectTable.LocalPlayer;
+
+        if (player == null)
+            return null;
+
+        string senderId = GetOrCreateSenderId();
+
+        return new PartySyncPresence
+        {
+            SenderId = senderId,
+            DisplayName = player.Name.TextValue,
+            TerritoryId = territoryId,
+            Position = SyncVector3.FromVector3(player.Position),
+            RotationRadians = player.Rotation,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
     public async void Update()
     {
         var config = Plugin.Instance.Configuration;
@@ -44,6 +91,7 @@ public sealed class PartySyncService
         {
             var config = Plugin.Instance.Configuration;
             uint territoryId = Plugin.ClientState.TerritoryType;
+            PartySyncPresence? localPresence = CreateLocalPresenceSnapshot(territoryId);
             string roomCode = config.SyncRoomCode;
 
             var localGraphBefore = NavigationManager.GetGraph(territoryId);
@@ -93,6 +141,16 @@ public sealed class PartySyncService
                 Plugin.ChatGui.Print($"[AetherTrail Sync] Imported new nodes: {importedNodes}");
                 Plugin.ChatGui.Print($"[AetherTrail Sync] Local nodes after import: {localGraphAfter.Nodes.Count}");
             });
+
+            try
+            {
+                await SyncPresence(localPresence, territoryId);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Error(ex, "AetherTrail presence sync failed.");
+                Plugin.ChatGui.Print($"[AetherTrail Sync] Presence sync failed: {ex.Message}");
+            }
         }
         catch (Exception ex)
         {

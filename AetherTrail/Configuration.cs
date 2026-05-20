@@ -7,8 +7,11 @@ namespace AetherTrail;
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
+    public string SyncClientId { get; set; } = "";
+    public bool PartyPresenceMarkersEnabled { get; set; } = true;
+    public float PartyPresenceMaxDrawDistance { get; set; } = 300.0f;
 
-    public string SyncServerUrl { get; set; } = "https://aethertrailsyncserver-production.up.railway.app";
+    public string SyncServerUrl { get; set; } = "https://aethertrailsyncserver.loplop6754loplop.workers.dev";
     public string SyncRoomCode { get; set; } = "";
     public bool PartySyncEnabled { get; set; } = false;
     public bool AutoSyncEnabled { get; set; } = true;
@@ -30,5 +33,20 @@ public class Configuration : IPluginConfiguration
     public void Save()
     {
         Plugin.PluginInterface.SavePluginConfig(this);
+    }
+
+    public void Migrate()
+    {
+        const string oldRailwayUrl = "https://aethertrailsyncserver-production.up.railway.app";
+        const string newCloudflareUrl = "https://aethertrailsyncserver.loplop6754loplop.workers.dev";
+
+        if (string.Equals(
+                this.SyncServerUrl.TrimEnd('/'),
+                oldRailwayUrl,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            this.SyncServerUrl = newCloudflareUrl;
+            this.Save();
+        }
     }
 }

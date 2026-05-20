@@ -52,6 +52,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GraphDebugRenderer graphDebugRenderer = new();
     private readonly OverlayRenderer overlayRenderer = new();
     private readonly PartySyncService partySyncService = new();
+    private readonly PartyPresenceWorldRenderer partyPresenceWorldRenderer = new();
 
     private DateTime lastPathUpdate = DateTime.MinValue;
     private const double PathUpdateIntervalSeconds = 0.20;
@@ -78,6 +79,7 @@ public sealed class Plugin : IDalamudPlugin
         Instance = this;
 
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        Configuration.Migrate();
 
         if (Configuration.SyncServerUrl == "http://localhost:5207")
         {
@@ -130,8 +132,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Export the current territory's AetherTrail graph."
         });
-
-        CommandManager.AddHandler(ImportCommandName, new CommandInfo(OnImportCommand)
+                CommandManager.AddHandler(ImportCommandName, new CommandInfo(OnImportCommand)
         {
             HelpMessage = "Import the current territory's AetherTrail graph."
         });
@@ -182,6 +183,7 @@ public sealed class Plugin : IDalamudPlugin
 
         GraphMutationQueue.Clear();
         NavigationManager.FlushDirtyGraphsImmediately();
+        PartyPresenceService.Clear();
 
         PluginInterface.UiBuilder.Draw -= DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -290,6 +292,7 @@ public sealed class Plugin : IDalamudPlugin
 
         trailRenderer.Draw();
         graphDebugRenderer.Draw();
+        partyPresenceWorldRenderer.Draw();
 
         overlayRenderer.Draw(
             this.trailEnabled,

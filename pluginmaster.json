@@ -5,16 +5,16 @@
         "InternalName": "AetherTrail",
         "Punchline": "Community-learned navigation trails for FFXIV.",
         "Description": "AetherTrail records player movement into a local navigation graph, renders trail guidance to map flags or quest targets, and supports opt-in party graph sync. Updated to include mapping function.",
-        "AssemblyVersion": "0.0.3.0",
+        "AssemblyVersion": "0.0.4.0",
         "TestingAssemblyVersion": null,
         "RepoUrl": "https://github.com/ImperfectRain/AetherTrail",
         "ApplicableVersion": "any",
         "DalamudApiLevel": 15,
         "IsHide": false,
         "IsTestingExclusive": false,
-        "DownloadLinkInstall": "https://github.com/ImperfectRain/AetherTrail/releases/download/Latest/release.v2.zip",
-        "DownloadLinkUpdate": "https://github.com/ImperfectRain/AetherTrail/releases/download/Latest/release.v2.zip",
-        "DownloadLinkTesting": "https://github.com/ImperfectRain/AetherTrail/releases/download/Latest/release.v2.zip",
-        "LastUpdate": "1730000000"
+        "DownloadLinkInstall": "https://github.com/ImperfectRain/AetherTrail/releases/download/v0.0.4/AetherTrail.zip",
+        "DownloadLinkUpdate": "https://github.com/ImperfectRain/AetherTrail/releases/download/v0.0.4/AetherTrail.zip",
+        "DownloadLinkTesting": "https://github.com/ImperfectRain/AetherTrail/releases/download/v0.0.4/AetherTrail.zip",
+        "LastUpdate": "1779310107"
     }
 ]

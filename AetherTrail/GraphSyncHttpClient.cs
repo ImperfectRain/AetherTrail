@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace AetherTrail;
 
@@ -62,5 +63,54 @@ public static class GraphSyncHttpClient
         string json = await response.Content.ReadAsStringAsync();
 
         return JsonSerializer.Deserialize<GraphSyncPacket>(json, JsonOptions);
+    }
+
+    public static async Task<bool> UploadPresenceAsync(PartySyncPresence presence)
+    {
+        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
+        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
+
+        string json = JsonSerializer.Serialize(presence, JsonOptions);
+
+        using var content = new StringContent(
+            json,
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        var response = await Client.PostAsync(
+            $"{baseUrl}/rooms/{room}/presence/{presence.TerritoryId}",
+            content
+        );
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string error = await response.Content.ReadAsStringAsync();
+            Plugin.Log.Warning($"AetherTrail presence upload failed: {(int)response.StatusCode} {error}");
+        }
+
+        return response.IsSuccessStatusCode;
+    }
+
+    public static async Task<List<PartySyncPresence>> DownloadPresenceAsync(uint territoryId)
+    {
+        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
+        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
+
+        var response = await Client.GetAsync(
+            $"{baseUrl}/rooms/{room}/presence/{territoryId}"
+        );
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string error = await response.Content.ReadAsStringAsync();
+            Plugin.Log.Warning($"AetherTrail presence download failed: {(int)response.StatusCode} {error}");
+            return new List<PartySyncPresence>();
+        }
+
+        string json = await response.Content.ReadAsStringAsync();
+
+        return JsonSerializer.Deserialize<List<PartySyncPresence>>(json, JsonOptions)
+            ?? new List<PartySyncPresence>();
     }
 }
