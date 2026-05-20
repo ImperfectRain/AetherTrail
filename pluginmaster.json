@@ -12,9 +12,9 @@
         "DalamudApiLevel": 15,
         "IsHide": false,
         "IsTestingExclusive": false,
-        "DownloadLinkInstall": "https://github.com/ImperfectRain/AetherTrail/releases/download/release/latest.zip",
-        "DownloadLinkUpdate": "https://github.com/ImperfectRain/AetherTrail/releases/download/release/latest.zip",
-        "DownloadLinkTesting": "https://github.com/ImperfectRain/AetherTrail/releases/download/release/latest.zip",
+        "DownloadLinkInstall": "https://github.com/ImperfectRain/AetherTrail/releases/download/debug/debug1.zip",
+        "DownloadLinkUpdate": "https://github.com/ImperfectRain/AetherTrail/releases/download/debug/debug1.zip",
+        "DownloadLinkTesting": "https://github.com/ImperfectRain/AetherTrail/releases/download/debug/debug1.zip",
         "LastUpdate": "1730000000"
     }
 ]
