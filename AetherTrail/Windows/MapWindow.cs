@@ -112,13 +112,13 @@ public sealed class MapWindow : Window, IDisposable
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left))
             this.pan += ImGui.GetIO().MouseDelta;
 
-        var visibleNodes = graph.Nodes
+        var visibleNodes = graph.GetSnapshot()
             .Where(ShouldShowNode)
             .ToList();
 
         if (visibleNodes.Count > 0)
         {
-            DrawGraph(drawList, graph, visibleNodes, canvasPos, canvasSize);
+            DrawGraph(drawList, visibleNodes, canvasPos, canvasSize);
             DrawActiveRoute(drawList, canvasPos, canvasSize);
             DrawPlayer(drawList, canvasPos, canvasSize);
         }
@@ -128,12 +128,13 @@ public sealed class MapWindow : Window, IDisposable
     }
 
     private void DrawGraph(
-        ImDrawListPtr drawList,
-        NavGraph graph,
-        System.Collections.Generic.List<NavNode> visibleNodes,
-        Vector2 canvasPos,
-        Vector2 canvasSize)
+    ImDrawListPtr drawList,
+    System.Collections.Generic.List<NavNodeSnapshot> visibleNodes,
+    Vector2 canvasPos,
+    Vector2 canvasSize)
     {
+        var nodesById = visibleNodes.ToDictionary(node => node.Id);
+
         if (this.showLinks)
         {
             foreach (var node in visibleNodes)
@@ -145,9 +146,7 @@ public sealed class MapWindow : Window, IDisposable
 
                 foreach (string linkId in node.Links)
                 {
-                    var linked = graph.GetNode(linkId);
-
-                    if (linked == null || !ShouldShowNode(linked))
+                    if (!nodesById.TryGetValue(linkId, out var linked))
                         continue;
 
                     Vector2 b = ToCanvas(linked.Position, canvasPos, canvasSize);
@@ -184,16 +183,13 @@ public sealed class MapWindow : Window, IDisposable
             if (!IsInsideCanvas(p, canvasPos, canvasSize))
                 continue;
 
-            int averageConfidence = 1;
-
-            if (node.LinkConfidence.Count > 0)
-                averageConfidence = (int)MathF.Round((float)node.LinkConfidence.Values.Average());
+            int nodeConfidence = NavConfidence.GetMedianConfidence(node);
 
             uint nodeColor = this.heatmapMode
-                ? GetHeatmapColor(averageConfidence, 0.95f)
+                ? GetHeatmapColor(nodeConfidence, 0.95f)
                 : node.TraversalMode == NavTraversalMode.Flight
-                    ? GetFlightColor(0.9f)
-                    : GetConfidenceColor(averageConfidence, 0.9f);
+                ? GetFlightColor(0.9f)
+                : GetConfidenceColor(nodeConfidence, 0.9f);
 
             float radius = node.TraversalMode == NavTraversalMode.Flight
                 ? 3.5f
@@ -310,7 +306,7 @@ public sealed class MapWindow : Window, IDisposable
                point.Y <= canvasPos.Y + canvasSize.Y;
     }
 
-    private bool ShouldShowNode(NavNode node)
+    private bool ShouldShowNode(NavNodeSnapshot node)
     {
         return node.TraversalMode switch
         {
@@ -352,15 +348,65 @@ public sealed class MapWindow : Window, IDisposable
 
     private static uint GetConfidenceColor(int confidence, float alpha)
     {
-        confidence = Math.Clamp(confidence, 1, 6);
+        confidence = NavConfidence.Clamp(confidence);
 
-        float t = (confidence - 1) / 5f;
+        Vector4 color;
 
-        float red = 1f - (0.8f * t);
-        float green = 1f;
-        float blue = 0f;
+        if (confidence >= NavConfidence.Locked)
+        {
+            color = new Vector4(0.15f, 0.45f, 1.0f, alpha);
+        }
+        else if (confidence >= NavConfidence.Trusted)
+        {
+            float t = (confidence - NavConfidence.Trusted) /
+                      (float)(NavConfidence.Locked - NavConfidence.Trusted);
 
-        return ImGui.ColorConvertFloat4ToU32(new Vector4(red, green, blue, alpha));
+            color = Lerp(
+                new Vector4(0.15f, 1.0f, 0.25f, alpha),
+                new Vector4(0.15f, 0.45f, 1.0f, alpha),
+                t
+            );
+        }
+        else if (confidence >= NavConfidence.Imported)
+        {
+            float t = (confidence - NavConfidence.Imported) /
+                      (float)(NavConfidence.Trusted - NavConfidence.Imported);
+
+            color = Lerp(
+                new Vector4(1.0f, 1.0f, 0.0f, alpha),
+                new Vector4(0.15f, 1.0f, 0.25f, alpha),
+                t
+            );
+        }
+        else if (confidence >= NavConfidence.Weak)
+        {
+            float t = (confidence - NavConfidence.Weak) /
+                      (float)(NavConfidence.Imported - NavConfidence.Weak);
+
+            color = Lerp(
+                new Vector4(1.0f, 0.45f, 0.0f, alpha),
+                new Vector4(1.0f, 1.0f, 0.0f, alpha),
+                t
+            );
+        }
+        else
+        {
+            float t = confidence / (float)NavConfidence.Weak;
+
+            color = Lerp(
+                new Vector4(1.0f, 0.0f, 0.0f, alpha),
+                new Vector4(1.0f, 0.45f, 0.0f, alpha),
+                t
+            );
+        }
+
+        return ImGui.ColorConvertFloat4ToU32(color);
+    }
+
+    private static Vector4 Lerp(Vector4 a, Vector4 b, float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        return a + ((b - a) * t);
     }
 
     private static uint GetFlightColor(float alpha)

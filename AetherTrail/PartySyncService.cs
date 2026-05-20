@@ -84,12 +84,15 @@ public sealed class PartySyncService
                 return;
             }
 
-            int importedNodes = NavigationManager.ImportSyncPacket(downloaded);
+            GraphMutationQueue.Enqueue(() =>
+            {
+                int importedNodes = NavigationManager.ImportSyncPacket(downloaded);
 
-            var localGraphAfter = NavigationManager.GetGraph(territoryId);
+                var localGraphAfter = NavigationManager.GetGraph(territoryId);
 
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Imported new nodes: {importedNodes}");
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Local nodes after import: {localGraphAfter.Nodes.Count}");
+                Plugin.ChatGui.Print($"[AetherTrail Sync] Imported new nodes: {importedNodes}");
+                Plugin.ChatGui.Print($"[AetherTrail Sync] Local nodes after import: {localGraphAfter.Nodes.Count}");
+            });
         }
         catch (Exception ex)
         {

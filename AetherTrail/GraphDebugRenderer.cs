@@ -76,15 +76,64 @@ public class GraphDebugRenderer
 
     private static uint GetConfidenceColor(int confidence, float alpha)
     {
-        confidence = Math.Clamp(confidence, 1, 6);
+        confidence = NavConfidence.Clamp(confidence);
 
-        float t = (confidence - 1) / 5f;
-        float red = 1f - (0.8f * t);
-        float green = 1f;
-        float blue = 0f;
+        Vector4 color;
 
-        return ImGui.ColorConvertFloat4ToU32(
-            new Vector4(red, green, blue, alpha)
-        );
+        if (confidence >= NavConfidence.Locked)
+        {
+            color = new Vector4(0.15f, 0.45f, 1.0f, alpha);
+        }
+        else if (confidence >= NavConfidence.Trusted)
+        {
+            float t = (confidence - NavConfidence.Trusted) /
+                      (float)(NavConfidence.Locked - NavConfidence.Trusted);
+
+            color = Lerp(
+                new Vector4(0.15f, 1.0f, 0.25f, alpha),
+                new Vector4(0.15f, 0.45f, 1.0f, alpha),
+                t
+            );
+        }
+        else if (confidence >= NavConfidence.Imported)
+        {
+            float t = (confidence - NavConfidence.Imported) /
+                      (float)(NavConfidence.Trusted - NavConfidence.Imported);
+
+            color = Lerp(
+                new Vector4(1.0f, 1.0f, 0.0f, alpha),
+                new Vector4(0.15f, 1.0f, 0.25f, alpha),
+                t
+            );
+        }
+        else if (confidence >= NavConfidence.Weak)
+        {
+            float t = (confidence - NavConfidence.Weak) /
+                      (float)(NavConfidence.Imported - NavConfidence.Weak);
+
+            color = Lerp(
+                new Vector4(1.0f, 0.45f, 0.0f, alpha),
+                new Vector4(1.0f, 1.0f, 0.0f, alpha),
+                t
+            );
+        }
+        else
+        {
+            float t = confidence / (float)NavConfidence.Weak;
+
+            color = Lerp(
+                new Vector4(1.0f, 0.0f, 0.0f, alpha),
+                new Vector4(1.0f, 0.45f, 0.0f, alpha),
+                t
+            );
+        }
+
+        return ImGui.ColorConvertFloat4ToU32(color);
+    }
+
+    private static Vector4 Lerp(Vector4 a, Vector4 b, float t)
+    {
+        t = Math.Clamp(t, 0f, 1f);
+        return a + ((b - a) * t);
     }
 }

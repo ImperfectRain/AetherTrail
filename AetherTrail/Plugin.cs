@@ -143,6 +143,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Remove flight-mode nodes from the current AetherTrail graph."
         });
+        CommandManager.AddHandler("/atrailresetconfidence", new CommandInfo(OnResetConfidenceCommand)
+        {
+            HelpMessage = "Reset all AetherTrail link confidence in the current territory to default."
+        });
         CommandManager.AddHandler(QuestDebugCommandName, new CommandInfo(OnQuestDebugCommand)
         {
             HelpMessage = "Print AetherTrail quest debug info."
@@ -175,6 +179,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+
+        GraphMutationQueue.Clear();
         NavigationManager.FlushDirtyGraphsImmediately();
 
         PluginInterface.UiBuilder.Draw -= DrawUI;
@@ -204,6 +210,8 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(SyncPreviewCommandName);
         CommandManager.RemoveHandler(CleanFlightCommandName);
         CommandManager.RemoveHandler(MapCommandName);
+        //trying to clean up implementation
+        CommandManager.RemoveHandler("/atrailresetconfidence");
 
         Log.Information("AetherTrail unloaded.");
     }
@@ -273,6 +281,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUI()
     {
+        GraphMutationQueue.Process();
+
         WindowSystem.Draw();
 
         UpdateRecording();
@@ -381,6 +391,17 @@ public sealed class Plugin : IDalamudPlugin
         ChatGui.Print(
             $"AetherTrail flight cleanup: removed {result.RemovedFlightNodes} flight nodes. " +
             $"Remaining: {result.RemainingNodes} nodes, {result.RemainingLinks} links."
+        );
+    }
+
+    private void OnResetConfidenceCommand(string command, string args)
+    {
+        uint territoryId = Plugin.ClientState.TerritoryType;
+
+        int updatedLinks = NavigationManager.ResetCurrentTerritoryConfidence(territoryId);
+
+        Plugin.ChatGui.Print(
+            $"AetherTrail reset confidence for territory {territoryId}. Updated {updatedLinks} links."
         );
     }
 

@@ -201,22 +201,7 @@ public static class NavigationManager
 
         foreach (var node in graph.Nodes)
         {
-            foreach (var key in node.LinkConfidence.Keys.ToList())
-            {
-                if (!node.Links.Contains(key))
-                {
-                    node.LinkConfidence.Remove(key);
-                    continue;
-                }
-
-                node.LinkConfidence[key] = Math.Max(1, node.LinkConfidence[key] - 1);
-            }
-
-            foreach (string linkId in node.Links)
-            {
-                if (!node.LinkConfidence.ContainsKey(linkId))
-                    node.LinkConfidence[linkId] = 1;
-            }
+            NavConfidence.NormalizeNodeConfidence(node);
         }
 
         graph.Nodes.RemoveAll(node => node.Links.Count == 0);
@@ -281,6 +266,18 @@ public static class NavigationManager
             RemainingNodes = result.RemainingNodes,
             RemainingLinks = result.RemainingLinks
         };
+    }
+
+    public static int ResetCurrentTerritoryConfidence(uint territoryId)
+    {
+        var graph = GetOrLoadGraph(territoryId);
+
+        int updatedLinks = NavConfidenceService.ResetGraphConfidence(graph);
+
+        MarkGraphDirty(territoryId);
+        SaveGraph(territoryId, graph);
+
+        return updatedLinks;
     }
 
     private static int MergeDuplicateNodes(NavGraph graph)
@@ -498,10 +495,7 @@ public static class NavigationManager
 
     private static void IncrementLinkConfidence(NavNode node, string linkedNodeId)
     {
-        if (!node.LinkConfidence.ContainsKey(linkedNodeId))
-            node.LinkConfidence[linkedNodeId] = 0;
-
-        node.LinkConfidence[linkedNodeId] += 2;
+        NavConfidence.IncrementTraversal(node, linkedNodeId);
     }
 
     private static bool IsTraversableLink(Vector3 a, Vector3 b)
@@ -888,6 +882,7 @@ public static class NavigationManager
                     continue;
 
                 LinkNodes(sourceNode, targetNode);
+                NavConfidence.SetImportedLinkConfidence(sourceNode, targetNode);
             }
         }
 
