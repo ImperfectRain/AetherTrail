@@ -10,11 +10,16 @@ namespace AetherTrail;
 
 public static class NavigationManager
 {
-    
+    private static readonly HashSet<uint> DirtyGraphs = new();
+
+    private static DateTime LastFlushTime = DateTime.UtcNow;
+
+    private const double SaveFlushIntervalSeconds = 10.0;
+
     private static readonly Dictionary<uint, NavGraph> Graphs = new();
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
+        WriteIndented = false,
         IncludeFields = true
     };
 
@@ -32,6 +37,44 @@ public static class NavigationManager
     private static string? LastPathStartNodeId;
     private static uint LastPathTerritoryId;
 
+    private static void MarkGraphDirty(uint territoryId)
+    {
+        DirtyGraphs.Add(territoryId);
+    }
+
+    public static void FlushDirtyGraphsImmediately()
+    {
+        foreach (uint territoryId in DirtyGraphs.ToList())
+        {
+            if (!Graphs.TryGetValue(territoryId, out var graph))
+                continue;
+
+            SaveGraph(territoryId, graph);
+        }
+
+        DirtyGraphs.Clear();
+        LastFlushTime = DateTime.UtcNow;
+    }
+
+    public static void FlushDirtyGraphs()
+    {
+        double elapsed = (DateTime.UtcNow - LastFlushTime).TotalSeconds;
+
+        if (elapsed < SaveFlushIntervalSeconds)
+            return;
+
+        LastFlushTime = DateTime.UtcNow;
+
+        foreach (uint territoryId in DirtyGraphs.ToList())
+        {
+            if (!Graphs.TryGetValue(territoryId, out var graph))
+                continue;
+
+            SaveGraph(territoryId, graph);
+        }
+
+        DirtyGraphs.Clear();
+    }
     private static NavNode? GetStableStartNode(NavGraph graph, uint territoryId, Vector3 start, float snapDistance)
     {
         if (territoryId != LastPathTerritoryId)
@@ -108,6 +151,7 @@ public static class NavigationManager
         var graph = GetOrLoadGraph(territoryId);
 
         graph.Nodes.RemoveAll(node => !IsValidNodePosition(node.Position));
+        graph.MarkDirty();
 
         int originalNodeCount = graph.Nodes.Count;
         int removedBrokenLinks = 0;
@@ -176,12 +220,13 @@ public static class NavigationManager
         }
 
         graph.Nodes.RemoveAll(node => node.Links.Count == 0);
+        graph.MarkDirty();
 
         int removedIsolatedNodes = originalNodeCount - graph.Nodes.Count;
 
         int mergedDuplicateNodes = MergeDuplicateNodes(graph);
 
-        SaveGraph(territoryId, graph);
+        MarkGraphDirty(territoryId);
 
         return new GraphPruneResult
         {
@@ -202,6 +247,7 @@ public static class NavigationManager
         int originalNodeCount = graph.Nodes.Count;
 
         graph.Nodes.RemoveAll(node => node.TraversalMode == NavTraversalMode.Flight);
+        graph.MarkDirty();
 
         var validIds = graph.Nodes
             .Select(node => node.Id)
@@ -220,7 +266,7 @@ public static class NavigationManager
 
         int removedFlightNodes = originalNodeCount - graph.Nodes.Count;
 
-        SaveGraph(territoryId, graph);
+        MarkGraphDirty(territoryId);
 
         var result = PruneGraph(territoryId);
 
@@ -261,6 +307,7 @@ public static class NavigationManager
 
                     MergeNodeInto(graph, source: b, target: a);
                     graph.Nodes.RemoveAt(j);
+                    graph.MarkDirty();
 
                     mergedCount++;
                     mergedSomething = true;
@@ -589,7 +636,7 @@ public static class NavigationManager
                 if (previousNode != null && previousNode.Id != nearbyExistingNode.Id)
                 {
                     LinkNodes(previousNode, nearbyExistingNode);
-                    SaveGraph(territoryId, graph);
+                    MarkGraphDirty(territoryId);
                 }
             }
 
@@ -638,7 +685,7 @@ public static class NavigationManager
         LastRecordedPosition = position;
         LastRecordedNodeId = newNode.Id;
 
-        SaveGraph(territoryId, graph);
+        MarkGraphDirty(territoryId);
     }
 
     private static NavGraph BuildModeFilteredGraph(NavGraph source, NavTraversalMode mode)

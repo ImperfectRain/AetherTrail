@@ -1,7 +1,8 @@
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 
 namespace AetherTrail;
 
@@ -132,6 +133,11 @@ public class TrailRenderer
                 drawList.AddCircleFilled(screenPos, radius, color);
             }
         }
+    }
+
+    public List<TrailPoint> GetCurrentDisplayPathSnapshot()
+    {
+        return GetDisplayPath().ToList();
     }
 
     private static List<TrailPoint> ThinDisplayPath(

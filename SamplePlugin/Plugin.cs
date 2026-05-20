@@ -69,6 +69,8 @@ public sealed class Plugin : IDalamudPlugin
     private MainWindow MainWindow { get; init; }
     private MapWindow MapWindow { get; init; }
 
+    public TrailRenderer TrailRenderer => this.trailRenderer;
+
 
 
     public Plugin()
@@ -173,6 +175,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        NavigationManager.FlushDirtyGraphsImmediately();
+
         PluginInterface.UiBuilder.Draw -= DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
@@ -182,6 +186,7 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         MainWindow.Dispose();
         MapWindow.Dispose();
+
 
         CommandManager.RemoveHandler(CommandName);
         CommandManager.RemoveHandler(DebugCommandName);
@@ -283,6 +288,7 @@ public sealed class Plugin : IDalamudPlugin
         );
 
         partySyncService.Update();
+        NavigationManager.FlushDirtyGraphs();
     }
 
     private void OnDebugCommand(string command, string args)

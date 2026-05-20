@@ -1,8 +1,11 @@
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Windowing;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
+using Lumina.Data.Files;
 using System;
 using System.Linq;
 using System.Numerics;
-using Dalamud.Interface.Windowing;
-using Dalamud.Bindings.ImGui;
 
 namespace AetherTrail.Windows;
 
@@ -12,6 +15,17 @@ public sealed class MapWindow : Window, IDisposable
 
     private float zoom = 1.0f;
     private Vector2 pan = Vector2.Zero;
+
+    private bool showGround = true;
+    private bool showFlight = true;
+    private bool showLinks = true;
+    private bool showNodes = true;
+    private bool showActiveRoute = true;
+    private bool heatmapMode;
+
+    private IDalamudTextureWrap? mapTexture;
+    private uint loadedMapTerritoryId;
+    private uint failedMapTerritoryId;
 
     public MapWindow(Plugin plugin)
         : base("AetherTrail Map###AetherTrailMap")
@@ -26,6 +40,8 @@ public sealed class MapWindow : Window, IDisposable
 
     public void Dispose()
     {
+        this.mapTexture?.Dispose();
+        this.mapTexture = null;
     }
 
     public override void Draw()
@@ -36,6 +52,18 @@ public sealed class MapWindow : Window, IDisposable
         ImGui.Text($"Territory: {territoryId}");
         ImGui.Text($"Nodes: {graph.Nodes.Count}");
         ImGui.SliderFloat("Zoom", ref this.zoom, 0.1f, 10.0f);
+
+        ImGui.Checkbox("Ground", ref this.showGround);
+        ImGui.SameLine();
+        ImGui.Checkbox("Flight", ref this.showFlight);
+        ImGui.SameLine();
+        ImGui.Checkbox("Links", ref this.showLinks);
+        ImGui.SameLine();
+        ImGui.Checkbox("Nodes", ref this.showNodes);
+        ImGui.SameLine();
+        ImGui.Checkbox("Route", ref this.showActiveRoute);
+        ImGui.SameLine();
+        ImGui.Checkbox("Heatmap", ref this.heatmapMode);
 
         if (ImGui.Button("Reset View"))
         {
@@ -60,86 +88,266 @@ public sealed class MapWindow : Window, IDisposable
         uint borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.35f, 0.35f, 0.35f, 1f));
 
         drawList.AddRectFilled(canvasPos, canvasPos + canvasSize, bgColor);
-        drawList.AddRect(canvasPos, canvasPos + canvasSize, borderColor);
+        drawList.PushClipRect(canvasPos, canvasPos + canvasSize, true);
+
+        var texture = GetCurrentMapTexture(territoryId);
+
+        if (texture != null)
+        {
+            Vector2 textureMin = MapNormalizedToCanvas(Vector2.Zero, canvasPos, canvasSize);
+            Vector2 textureMax = MapNormalizedToCanvas(Vector2.One, canvasPos, canvasSize);
+
+            drawList.AddImage(
+                texture.Handle,
+                textureMin,
+                textureMax,
+                Vector2.Zero,
+                Vector2.One,
+                ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.65f))
+            );
+        }
 
         ImGui.InvisibleButton("AetherTrailMapCanvas", canvasSize);
 
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left))
             this.pan += ImGui.GetIO().MouseDelta;
 
-        if (graph.Nodes.Count == 0)
-            return;
+        var visibleNodes = graph.Nodes
+            .Where(ShouldShowNode)
+            .ToList();
 
-        float minX = graph.Nodes.Min(n => n.Position.X);
-        float maxX = graph.Nodes.Max(n => n.Position.X);
-        float minZ = graph.Nodes.Min(n => n.Position.Z);
-        float maxZ = graph.Nodes.Max(n => n.Position.Z);
-
-        float graphWidth = MathF.Max(maxX - minX, 1f);
-        float graphHeight = MathF.Max(maxZ - minZ, 1f);
-
-        float baseScale = MathF.Min(
-            canvasSize.X / graphWidth,
-            canvasSize.Y / graphHeight
-        ) * 0.85f;
-
-        float scale = baseScale * this.zoom;
-
-        Vector2 center = canvasPos + canvasSize * 0.5f + this.pan;
-
-        Vector2 ToCanvas(Vector3 world)
+        if (visibleNodes.Count > 0)
         {
-            float x = (world.X - ((minX + maxX) * 0.5f)) * scale;
-            float y = (world.Z - ((minZ + maxZ) * 0.5f)) * scale;
-
-            return center + new Vector2(x, y);
+            DrawGraph(drawList, graph, visibleNodes, canvasPos, canvasSize);
+            DrawActiveRoute(drawList, canvasPos, canvasSize);
+            DrawPlayer(drawList, canvasPos, canvasSize);
         }
 
-        foreach (var node in graph.Nodes)
+        drawList.PopClipRect();
+        drawList.AddRect(canvasPos, canvasPos + canvasSize, borderColor);
+    }
+
+    private void DrawGraph(
+        ImDrawListPtr drawList,
+        NavGraph graph,
+        System.Collections.Generic.List<NavNode> visibleNodes,
+        Vector2 canvasPos,
+        Vector2 canvasSize)
+    {
+        if (this.showLinks)
         {
-            Vector2 a = ToCanvas(node.Position);
-
-            foreach (string linkId in node.Links)
+            foreach (var node in visibleNodes)
             {
-                var linked = graph.GetNode(linkId);
+                Vector2 a = ToCanvas(node.Position, canvasPos, canvasSize);
 
-                if (linked == null)
+                if (!IsInsideCanvas(a, canvasPos, canvasSize))
                     continue;
 
-                Vector2 b = ToCanvas(linked.Position);
+                foreach (string linkId in node.Links)
+                {
+                    var linked = graph.GetNode(linkId);
 
-                int confidence = node.LinkConfidence.TryGetValue(linkId, out int value)
-                    ? value
-                    : 1;
+                    if (linked == null || !ShouldShowNode(linked))
+                        continue;
 
-                uint linkColor = GetConfidenceColor(confidence, 0.45f);
+                    Vector2 b = ToCanvas(linked.Position, canvasPos, canvasSize);
 
-                drawList.AddLine(a, b, linkColor, 1.5f);
+                    if (!IsInsideCanvas(b, canvasPos, canvasSize))
+                        continue;
+
+                    int confidence = node.LinkConfidence.TryGetValue(linkId, out int value)
+                        ? value
+                        : 1;
+
+                    uint linkColor = this.heatmapMode
+                        ? GetHeatmapColor(confidence, 0.65f)
+                        : node.TraversalMode == NavTraversalMode.Flight
+                            ? GetFlightColor(0.45f)
+                            : GetConfidenceColor(confidence, 0.45f);
+
+                    float thickness = this.heatmapMode
+                        ? Math.Clamp(1.0f + confidence * 0.12f, 1.0f, 4.0f)
+                        : 1.5f;
+
+                    drawList.AddLine(a, b, linkColor, thickness);
+                }
             }
         }
 
-        foreach (var node in graph.Nodes)
+        if (!this.showNodes)
+            return;
+
+        foreach (var node in visibleNodes)
         {
-            Vector2 p = ToCanvas(node.Position);
+            Vector2 p = ToCanvas(node.Position, canvasPos, canvasSize);
+
+            if (!IsInsideCanvas(p, canvasPos, canvasSize))
+                continue;
 
             int averageConfidence = 1;
 
             if (node.LinkConfidence.Count > 0)
                 averageConfidence = (int)MathF.Round((float)node.LinkConfidence.Values.Average());
 
-            uint nodeColor = GetConfidenceColor(averageConfidence, 0.9f);
+            uint nodeColor = this.heatmapMode
+                ? GetHeatmapColor(averageConfidence, 0.95f)
+                : node.TraversalMode == NavTraversalMode.Flight
+                    ? GetFlightColor(0.9f)
+                    : GetConfidenceColor(averageConfidence, 0.9f);
 
-            drawList.AddCircleFilled(p, 3.0f, nodeColor);
+            float radius = node.TraversalMode == NavTraversalMode.Flight
+                ? 3.5f
+                : 3.0f;
+
+            drawList.AddCircleFilled(p, radius, nodeColor);
         }
+    }
 
+    private void DrawActiveRoute(ImDrawListPtr drawList, Vector2 canvasPos, Vector2 canvasSize)
+    {
+        if (!this.showActiveRoute)
+            return;
+
+        var route = this.plugin.TrailRenderer.GetCurrentDisplayPathSnapshot();
+
+        for (int i = 0; i < route.Count - 1; i++)
+        {
+            Vector2 a = ToCanvas(route[i].Position, canvasPos, canvasSize);
+            Vector2 b = ToCanvas(route[i + 1].Position, canvasPos, canvasSize);
+
+            if (!IsInsideCanvas(a, canvasPos, canvasSize) && !IsInsideCanvas(b, canvasPos, canvasSize))
+                continue;
+
+            uint routeColor = ImGui.ColorConvertFloat4ToU32(
+                new Vector4(0.15f, 0.85f, 1.0f, 0.95f)
+            );
+
+            drawList.AddLine(a, b, routeColor, 3.0f);
+        }
+    }
+
+    private void DrawPlayer(ImDrawListPtr drawList, Vector2 canvasPos, Vector2 canvasSize)
+    {
         var player = Plugin.ObjectTable.LocalPlayer;
 
-        if (player != null)
+        if (player == null)
+            return;
+
+        Vector2 playerPoint = ToCanvas(player.Position, canvasPos, canvasSize);
+
+        if (!IsInsideCanvas(playerPoint, canvasPos, canvasSize))
+            return;
+
+        uint playerColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f, 0.6f, 1f, 1f));
+        drawList.AddCircleFilled(playerPoint, 6f, playerColor);
+    }
+
+    private Vector2 ToCanvas(Vector3 world, Vector2 canvasPos, Vector2 canvasSize)
+    {
+        return MapNormalizedToCanvas(
+            WorldToMapNormalized(world),
+            canvasPos,
+            canvasSize
+        );
+    }
+
+    private Vector2 MapNormalizedToCanvas(Vector2 normalized, Vector2 canvasPos, Vector2 canvasSize)
+    {
+        Vector2 local = normalized * canvasSize;
+        local -= canvasSize * 0.5f;
+        local *= this.zoom;
+
+        return canvasPos + canvasSize * 0.5f + local + this.pan;
+    }
+
+    private unsafe Vector2 WorldToMapNormalized(Vector3 world)
+    {
+        if (!TryGetMapTransform(out float sizeFactor, out float offsetX, out float offsetY))
+            return new Vector2(0.5f, 0.5f);
+
+        float mapX = ((world.X + offsetX) * sizeFactor / 100f) + 1024f;
+        float mapY = ((world.Z + offsetY) * sizeFactor / 100f) + 1024f;
+
+        return new Vector2(
+            mapX / 2048f,
+            mapY / 2048f
+        );
+    }
+
+    private unsafe bool TryGetMapTransform(out float sizeFactor, out float offsetX, out float offsetY)
+    {
+        sizeFactor = 100f;
+        offsetX = 0f;
+        offsetY = 0f;
+
+        var agentMap = AgentMap.Instance();
+
+        if (agentMap == null)
+            return false;
+
+        sizeFactor = agentMap->CurrentMapSizeFactor;
+
+        if (sizeFactor <= 0)
+            sizeFactor = agentMap->SelectedMapSizeFactor;
+
+        offsetX = agentMap->CurrentOffsetX;
+        offsetY = agentMap->CurrentOffsetY;
+
+        if (offsetX == 0 && offsetY == 0)
         {
-            Vector2 playerPoint = ToCanvas(player.Position);
-            uint playerColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f, 0.6f, 1f, 1f));
-            drawList.AddCircleFilled(playerPoint, 6f, playerColor);
+            offsetX = agentMap->SelectedOffsetX;
+            offsetY = agentMap->SelectedOffsetY;
         }
+
+        return sizeFactor > 0;
+    }
+
+    private static bool IsInsideCanvas(Vector2 point, Vector2 canvasPos, Vector2 canvasSize)
+    {
+        return point.X >= canvasPos.X &&
+               point.X <= canvasPos.X + canvasSize.X &&
+               point.Y >= canvasPos.Y &&
+               point.Y <= canvasPos.Y + canvasSize.Y;
+    }
+
+    private bool ShouldShowNode(NavNode node)
+    {
+        return node.TraversalMode switch
+        {
+            NavTraversalMode.Ground => this.showGround,
+            NavTraversalMode.Flight => this.showFlight,
+            _ => true
+        };
+    }
+
+    private static uint GetHeatmapColor(int confidence, float alpha)
+    {
+        confidence = Math.Clamp(confidence, 1, 20);
+
+        float t = (confidence - 1) / 19f;
+
+        float red;
+        float green;
+        float blue;
+
+        if (t < 0.5f)
+        {
+            float local = t / 0.5f;
+
+            red = local;
+            green = local * 0.65f;
+            blue = 1f - local;
+        }
+        else
+        {
+            float local = (t - 0.5f) / 0.5f;
+
+            red = 1f;
+            green = 0.65f + local * 0.35f;
+            blue = 0f;
+        }
+
+        return ImGui.ColorConvertFloat4ToU32(new Vector4(red, green, blue, alpha));
     }
 
     private static uint GetConfidenceColor(int confidence, float alpha)
@@ -153,5 +361,85 @@ public sealed class MapWindow : Window, IDisposable
         float blue = 0f;
 
         return ImGui.ColorConvertFloat4ToU32(new Vector4(red, green, blue, alpha));
+    }
+
+    private static uint GetFlightColor(float alpha)
+    {
+        return ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 1.0f, alpha));
+    }
+
+    private unsafe IDalamudTextureWrap? GetCurrentMapTexture(uint territoryId)
+    {
+        if (this.mapTexture != null && this.loadedMapTerritoryId == territoryId)
+            return this.mapTexture;
+
+        if (this.failedMapTerritoryId == territoryId)
+            return null;
+
+        this.mapTexture?.Dispose();
+        this.mapTexture = null;
+        this.loadedMapTerritoryId = territoryId;
+
+        var agentMap = AgentMap.Instance();
+
+        if (agentMap == null)
+        {
+            this.failedMapTerritoryId = territoryId;
+            return null;
+        }
+
+        string path = agentMap->CurrentMapPath.ToString();
+
+        if (string.IsNullOrWhiteSpace(path))
+            path = agentMap->SelectedMapPath.ToString();
+
+        if (string.IsNullOrWhiteSpace(path))
+            path = agentMap->CurrentMapBgPath.ToString();
+
+        if (string.IsNullOrWhiteSpace(path))
+            path = agentMap->SelectedMapBgPath.ToString();
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            this.failedMapTerritoryId = territoryId;
+            return null;
+        }
+
+        string basePath = path.EndsWith(".tex", StringComparison.OrdinalIgnoreCase)
+            ? path[..^4]
+            : path;
+
+        string[] texturePaths =
+        {
+            $"{basePath}.tex",
+            $"{basePath.Replace("_m", "m_m")}.tex",
+            $"{basePath.Replace("_m", "_s")}.tex"
+        };
+
+        foreach (string texturePath in texturePaths.Distinct())
+        {
+            try
+            {
+                var texFile = Plugin.DataManager.GetFile<TexFile>(texturePath);
+
+                if (texFile == null)
+                    continue;
+
+                this.mapTexture = Plugin.TextureProvider.CreateFromTexFile(texFile);
+
+                if (this.mapTexture != null)
+                {
+                    this.failedMapTerritoryId = 0;
+                    return this.mapTexture;
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.Debug(ex, $"Failed to load map texture candidate: {texturePath}");
+            }
+        }
+
+        this.failedMapTerritoryId = territoryId;
+        return null;
     }
 }
