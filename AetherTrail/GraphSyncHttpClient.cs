@@ -9,12 +9,19 @@ public static class GraphSyncHttpClient
 {
     private static readonly HttpClient Client = new();
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        IncludeFields = true,
+        WriteIndented = false
+    };
+
     public static async Task<bool> UploadAsync(GraphSyncPacket packet)
     {
         string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode;
+        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
 
-        string json = JsonSerializer.Serialize(packet);
+        string json = JsonSerializer.Serialize(packet, JsonOptions);
 
         using var content = new StringContent(
             json,
@@ -27,23 +34,33 @@ public static class GraphSyncHttpClient
             content
         );
 
+        if (!response.IsSuccessStatusCode)
+        {
+            string error = await response.Content.ReadAsStringAsync();
+            Plugin.Log.Warning($"AetherTrail sync upload failed: {(int)response.StatusCode} {error}");
+        }
+
         return response.IsSuccessStatusCode;
     }
 
     public static async Task<GraphSyncPacket?> DownloadAsync(uint territoryId)
     {
         string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode;
+        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
 
         var response = await Client.GetAsync(
             $"{baseUrl}/rooms/{room}/graphs/{territoryId}"
         );
 
         if (!response.IsSuccessStatusCode)
+        {
+            string error = await response.Content.ReadAsStringAsync();
+            Plugin.Log.Warning($"AetherTrail sync download failed: {(int)response.StatusCode} {error}");
             return null;
+        }
 
         string json = await response.Content.ReadAsStringAsync();
 
-        return JsonSerializer.Deserialize<GraphSyncPacket>(json);
+        return JsonSerializer.Deserialize<GraphSyncPacket>(json, JsonOptions);
     }
 }
