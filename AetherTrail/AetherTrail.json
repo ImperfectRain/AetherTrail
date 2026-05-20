@@ -1,10 +1,14 @@
 {
-  "Author": "imperfect_rain",
-  "Name": "AetherTrail",
-  "Punchline": "WIP",
-  "Description": "WIP",
-  "ApplicableVersion": "any",
-  "Tags": [
-   "plugin"
-          ]
+    "Author": "imperfect_rain",
+    "Name": "AetherTrail",
+    "InternalName": "AetherTrail",
+    "Punchline": "Community-learned navigation trails for FFXIV.",
+    "Description": "AetherTrail records player movement into a local navigation graph, renders trail guidance to map flags or quest targets, and supports opt-in party graph sync.",
+    "ApplicableVersion": "any",
+    "AssemblyVersion": "0.0.3.0",
+    "Tags": [
+        "utility",
+        "navigation",
+        "map"
+    ]
 }

@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
-  <PropertyGroup>
-    <Version>0.0.3.0</Version>
-    <PackageProjectUrl>https://github.com/ImperfectRain/AetherTrail</PackageProjectUrl>
-    <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
-    <IsPackable>false</IsPackable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
+    <PropertyGroup>
+        <Version>0.0.3.0</Version>
+        <AssemblyVersion>0.0.3.0</AssemblyVersion>
+        <FileVersion>0.0.3.0</FileVersion>
 
-  <ItemGroup>
-    <Content Include="..\Data\goat.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Visible>false</Visible>
-    </Content>
-  </ItemGroup>
+        <AssemblyName>AetherTrail</AssemblyName>
+        <RootNamespace>AetherTrail</RootNamespace>
+
+        <PackageProjectUrl>https://github.com/ImperfectRain/AetherTrail</PackageProjectUrl>
+        <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
+        <IsPackable>false</IsPackable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Content Include="..\Data\goat.png">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+            <Visible>false</Visible>
+        </Content>
+    </ItemGroup>
 </Project>
