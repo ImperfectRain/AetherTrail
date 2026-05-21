@@ -1,7 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Windowing;
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Data.Files;
 using System;
 using System.Collections.Generic;
@@ -12,6 +11,8 @@ namespace AetherTrail.Windows;
 
 public sealed class MapWindow : Window, IDisposable
 {
+    private const float BaseMapDisplaySize = 2048f;
+
     private readonly Plugin plugin;
 
     private float zoom = 1.0f;
@@ -25,8 +26,11 @@ public sealed class MapWindow : Window, IDisposable
     private MapDisplayMode displayMode = MapDisplayMode.Normal;
 
     private IDalamudTextureWrap? mapTexture;
-    private uint loadedMapTerritoryId;
-    private uint failedMapTerritoryId;
+    private string loadedTexturePath = string.Empty;
+    private string failedTexturePath = string.Empty;
+
+    private int cachedDensitySignature;
+    private Dictionary<string, int> cachedDensityByNodeId = new();
 
     public MapWindow(Plugin plugin)
         : base("AetherTrail Map###AetherTrailMap")
@@ -52,14 +56,19 @@ public sealed class MapWindow : Window, IDisposable
             ImGui.GetWindowPos() + ImGui.GetWindowSize()
         );
 
-        // existing draw code...
-    
         uint territoryId = Plugin.ClientState.TerritoryType;
         var graph = NavigationManager.GetGraph(territoryId);
+        bool hasMapTransform = MapTransformService.TryGetCurrent(out var mapTransform);
 
         ImGui.Text($"Territory: {territoryId}");
+        if (hasMapTransform)
+        {
+            ImGui.SameLine();
+            ImGui.Text($"Map: {mapTransform.MapId}");
+        }
+
         ImGui.Text($"Nodes: {graph.Nodes.Count}");
-        ImGui.SliderFloat("Zoom", ref this.zoom, 0.1f, 10.0f);
+        ImGui.SliderFloat("Zoom", ref this.zoom, 0.1f, 20.0f);
 
         ImGui.Checkbox("Ground", ref this.showGround);
         ImGui.SameLine();
@@ -84,7 +93,13 @@ public sealed class MapWindow : Window, IDisposable
             this.displayMode = (MapDisplayMode)displayModeValue;
         }
 
-        if (ImGui.Button("Reset View"))
+        bool resetView = ImGui.Button("Reset View");
+        ImGui.SameLine();
+        bool centerPlayer = ImGui.Button("Center Player");
+        ImGui.SameLine();
+        bool fitGraph = ImGui.Button("Fit Graph");
+
+        if (resetView)
         {
             this.zoom = 1.0f;
             this.pan = Vector2.Zero;
@@ -109,7 +124,22 @@ public sealed class MapWindow : Window, IDisposable
         drawList.AddRectFilled(canvasPos, canvasPos + canvasSize, bgColor);
         drawList.PushClipRect(canvasPos, canvasPos + canvasSize, true);
 
-        var texture = GetCurrentMapTexture(territoryId);
+        var visibleNodes = graph.GetSnapshot()
+            .Where(ShouldShowNode)
+            .ToList();
+
+        if (hasMapTransform)
+        {
+            if (centerPlayer)
+                CenterOnPlayer(mapTransform, canvasSize);
+
+            if (fitGraph)
+                FitGraphToCanvas(visibleNodes, mapTransform, canvasSize);
+        }
+
+        var texture = hasMapTransform
+            ? GetCurrentMapTexture(mapTransform)
+            : null;
 
         if (texture != null)
         {
@@ -131,15 +161,14 @@ public sealed class MapWindow : Window, IDisposable
         if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left))
             this.pan += ImGui.GetIO().MouseDelta;
 
-        var visibleNodes = graph.GetSnapshot()
-            .Where(ShouldShowNode)
-            .ToList();
+        if (ImGui.IsItemHovered())
+            ApplyMouseWheelZoom(canvasPos, canvasSize);
 
-        if (visibleNodes.Count > 0)
+        if (hasMapTransform && visibleNodes.Count > 0)
         {
-            DrawGraph(drawList, visibleNodes, canvasPos, canvasSize);
-            DrawActiveRoute(drawList, canvasPos, canvasSize);
-            DrawPlayer(drawList, canvasPos, canvasSize);
+            DrawGraph(drawList, visibleNodes, mapTransform, canvasPos, canvasSize);
+            DrawActiveRoute(drawList, mapTransform, canvasPos, canvasSize);
+            DrawPlayer(drawList, mapTransform, canvasPos, canvasSize);
         }
 
         drawList.PopClipRect();
@@ -148,7 +177,8 @@ public sealed class MapWindow : Window, IDisposable
 
     private void DrawGraph(
     ImDrawListPtr drawList,
-    System.Collections.Generic.List<NavNodeSnapshot> visibleNodes,
+    List<NavNodeSnapshot> visibleNodes,
+    MapTransformSnapshot transform,
     Vector2 canvasPos,
     Vector2 canvasSize)
     {
@@ -164,26 +194,23 @@ public sealed class MapWindow : Window, IDisposable
         }
 
         Dictionary<string, int> densityByNodeId = this.displayMode == MapDisplayMode.Density
-            ? BuildDensityLookup(visibleNodes, 18.0f)
+            ? GetDensityLookup(visibleNodes, 18.0f)
             : new Dictionary<string, int>();
 
         if (this.showLinks)
         {
             foreach (var node in visibleNodes)
             {
-                Vector2 a = ToCanvas(node.Position, canvasPos, canvasSize);
-
-                if (!IsInsideCanvas(a, canvasPos, canvasSize))
-                    continue;
+                Vector2 a = ToCanvas(node.Position, transform, canvasPos, canvasSize);
 
                 foreach (string linkId in node.Links)
                 {
                     if (!nodesById.TryGetValue(linkId, out var linked))
                         continue;
 
-                    Vector2 b = ToCanvas(linked.Position, canvasPos, canvasSize);
+                    Vector2 b = ToCanvas(linked.Position, transform, canvasPos, canvasSize);
 
-                    if (!IsInsideCanvas(b, canvasPos, canvasSize))
+                    if (!IsSegmentVisible(a, b, canvasPos, canvasSize))
                         continue;
 
                     int confidence = node.LinkConfidence.TryGetValue(linkId, out int value)
@@ -230,7 +257,7 @@ public sealed class MapWindow : Window, IDisposable
 
         foreach (var node in visibleNodes)
         {
-            Vector2 p = ToCanvas(node.Position, canvasPos, canvasSize);
+            Vector2 p = ToCanvas(node.Position, transform, canvasPos, canvasSize);
 
             if (!IsInsideCanvas(p, canvasPos, canvasSize))
                 continue;
@@ -267,7 +294,11 @@ public sealed class MapWindow : Window, IDisposable
         }
     }
 
-    private void DrawActiveRoute(ImDrawListPtr drawList, Vector2 canvasPos, Vector2 canvasSize)
+    private void DrawActiveRoute(
+        ImDrawListPtr drawList,
+        MapTransformSnapshot transform,
+        Vector2 canvasPos,
+        Vector2 canvasSize)
     {
         if (!this.showActiveRoute)
             return;
@@ -276,10 +307,10 @@ public sealed class MapWindow : Window, IDisposable
 
         for (int i = 0; i < route.Count - 1; i++)
         {
-            Vector2 a = ToCanvas(route[i].Position, canvasPos, canvasSize);
-            Vector2 b = ToCanvas(route[i + 1].Position, canvasPos, canvasSize);
+            Vector2 a = ToCanvas(route[i].Position, transform, canvasPos, canvasSize);
+            Vector2 b = ToCanvas(route[i + 1].Position, transform, canvasPos, canvasSize);
 
-            if (!IsInsideCanvas(a, canvasPos, canvasSize) && !IsInsideCanvas(b, canvasPos, canvasSize))
+            if (!IsSegmentVisible(a, b, canvasPos, canvasSize))
                 continue;
 
             uint routeColor = ImGui.ColorConvertFloat4ToU32(
@@ -290,14 +321,18 @@ public sealed class MapWindow : Window, IDisposable
         }
     }
 
-    private void DrawPlayer(ImDrawListPtr drawList, Vector2 canvasPos, Vector2 canvasSize)
+    private void DrawPlayer(
+        ImDrawListPtr drawList,
+        MapTransformSnapshot transform,
+        Vector2 canvasPos,
+        Vector2 canvasSize)
     {
         var player = Plugin.ObjectTable.LocalPlayer;
 
         if (player == null)
             return;
 
-        Vector2 playerPoint = ToCanvas(player.Position, canvasPos, canvasSize);
+        Vector2 playerPoint = ToCanvas(player.Position, transform, canvasPos, canvasSize);
 
         if (!IsInsideCanvas(playerPoint, canvasPos, canvasSize))
             return;
@@ -306,10 +341,14 @@ public sealed class MapWindow : Window, IDisposable
         drawList.AddCircleFilled(playerPoint, 6f, playerColor);
     }
 
-    private Vector2 ToCanvas(Vector3 world, Vector2 canvasPos, Vector2 canvasSize)
+    private Vector2 ToCanvas(
+        Vector3 world,
+        MapTransformSnapshot transform,
+        Vector2 canvasPos,
+        Vector2 canvasSize)
     {
         return MapNormalizedToCanvas(
-            WorldToMapNormalized(world),
+            MapCoordinateConverter.WorldToMapNormalized(world, transform),
             canvasPos,
             canvasSize
         );
@@ -317,53 +356,9 @@ public sealed class MapWindow : Window, IDisposable
 
     private Vector2 MapNormalizedToCanvas(Vector2 normalized, Vector2 canvasPos, Vector2 canvasSize)
     {
-        Vector2 local = normalized * canvasSize;
-        local -= canvasSize * 0.5f;
-        local *= this.zoom;
+        Vector2 local = (normalized - new Vector2(0.5f)) * BaseMapDisplaySize * this.zoom;
 
         return canvasPos + canvasSize * 0.5f + local + this.pan;
-    }
-
-    private unsafe Vector2 WorldToMapNormalized(Vector3 world)
-    {
-        if (!TryGetMapTransform(out float sizeFactor, out float offsetX, out float offsetY))
-            return new Vector2(0.5f, 0.5f);
-
-        float mapX = ((world.X + offsetX) * sizeFactor / 100f) + 1024f;
-        float mapY = ((world.Z + offsetY) * sizeFactor / 100f) + 1024f;
-
-        return new Vector2(
-            mapX / 2048f,
-            mapY / 2048f
-        );
-    }
-
-    private unsafe bool TryGetMapTransform(out float sizeFactor, out float offsetX, out float offsetY)
-    {
-        sizeFactor = 100f;
-        offsetX = 0f;
-        offsetY = 0f;
-
-        var agentMap = AgentMap.Instance();
-
-        if (agentMap == null)
-            return false;
-
-        sizeFactor = agentMap->CurrentMapSizeFactor;
-
-        if (sizeFactor <= 0)
-            sizeFactor = agentMap->SelectedMapSizeFactor;
-
-        offsetX = agentMap->CurrentOffsetX;
-        offsetY = agentMap->CurrentOffsetY;
-
-        if (offsetX == 0 && offsetY == 0)
-        {
-            offsetX = agentMap->SelectedOffsetX;
-            offsetY = agentMap->SelectedOffsetY;
-        }
-
-        return sizeFactor > 0;
     }
 
     private static bool IsInsideCanvas(Vector2 point, Vector2 canvasPos, Vector2 canvasSize)
@@ -374,6 +369,22 @@ public sealed class MapWindow : Window, IDisposable
                point.Y <= canvasPos.Y + canvasSize.Y;
     }
 
+    private static bool IsSegmentVisible(Vector2 a, Vector2 b, Vector2 canvasPos, Vector2 canvasSize)
+    {
+        if (IsInsideCanvas(a, canvasPos, canvasSize) || IsInsideCanvas(b, canvasPos, canvasSize))
+            return true;
+
+        float left = canvasPos.X;
+        float right = canvasPos.X + canvasSize.X;
+        float top = canvasPos.Y;
+        float bottom = canvasPos.Y + canvasSize.Y;
+
+        return MathF.Max(a.X, b.X) >= left &&
+               MathF.Min(a.X, b.X) <= right &&
+               MathF.Max(a.Y, b.Y) >= top &&
+               MathF.Min(a.Y, b.Y) <= bottom;
+    }
+
     private bool ShouldShowNode(NavNodeSnapshot node)
     {
         return node.TraversalMode switch
@@ -382,6 +393,38 @@ public sealed class MapWindow : Window, IDisposable
             NavTraversalMode.Flight => this.showFlight,
             _ => true
         };
+    }
+
+    private Dictionary<string, int> GetDensityLookup(
+    List<NavNodeSnapshot> nodes,
+    float radius)
+    {
+        int signature = BuildDensitySignature(nodes, radius);
+
+        if (signature == this.cachedDensitySignature)
+            return this.cachedDensityByNodeId;
+
+        this.cachedDensitySignature = signature;
+        this.cachedDensityByNodeId = BuildDensityLookup(nodes, radius);
+        return this.cachedDensityByNodeId;
+    }
+
+    private static int BuildDensitySignature(List<NavNodeSnapshot> nodes, float radius)
+    {
+        HashCode hash = new();
+
+        hash.Add(nodes.Count);
+        hash.Add(radius);
+
+        foreach (var node in nodes)
+        {
+            hash.Add(node.Id);
+            hash.Add(node.TraversalMode);
+            hash.Add(node.Position);
+            hash.Add(node.Links.Count);
+        }
+
+        return hash.ToHashCode();
     }
 
     private static Dictionary<string, int> BuildDensityLookup(
@@ -414,36 +457,6 @@ public sealed class MapWindow : Window, IDisposable
         }
 
         return densityByNodeId;
-    }
-
-    private static uint GetHeatmapColor(int confidence, float alpha)
-    {
-        confidence = Math.Clamp(confidence, 1, 20);
-
-        float t = (confidence - 1) / 19f;
-
-        float red;
-        float green;
-        float blue;
-
-        if (t < 0.5f)
-        {
-            float local = t / 0.5f;
-
-            red = local;
-            green = local * 0.65f;
-            blue = 1f - local;
-        }
-        else
-        {
-            float local = (t - 0.5f) / 0.5f;
-
-            red = 1f;
-            green = 0.65f + local * 0.35f;
-            blue = 0f;
-        }
-
-        return ImGui.ColorConvertFloat4ToU32(new Vector4(red, green, blue, alpha));
     }
 
     private static uint GetConfidenceColor(int confidence, float alpha)
@@ -556,42 +569,82 @@ public sealed class MapWindow : Window, IDisposable
         return ImGui.ColorConvertFloat4ToU32(new Vector4(0.25f, 0.75f, 1.0f, alpha));
     }
 
-    private unsafe IDalamudTextureWrap? GetCurrentMapTexture(uint territoryId)
+    private void ApplyMouseWheelZoom(Vector2 canvasPos, Vector2 canvasSize)
     {
-        if (this.mapTexture != null && this.loadedMapTerritoryId == territoryId)
+        float wheel = ImGui.GetIO().MouseWheel;
+
+        if (MathF.Abs(wheel) < 0.001f)
+            return;
+
+        float oldZoom = this.zoom;
+        float newZoom = Math.Clamp(oldZoom * MathF.Pow(1.12f, wheel), 0.1f, 20.0f);
+
+        if (MathF.Abs(newZoom - oldZoom) < 0.001f)
+            return;
+
+        Vector2 mouse = ImGui.GetIO().MousePos;
+        Vector2 center = canvasPos + canvasSize * 0.5f;
+        Vector2 mapOffsetBeforeZoom = (mouse - center - this.pan) / oldZoom;
+
+        this.zoom = newZoom;
+        this.pan = mouse - center - mapOffsetBeforeZoom * newZoom;
+    }
+
+    private void CenterOnPlayer(MapTransformSnapshot transform, Vector2 canvasSize)
+    {
+        var player = Plugin.ObjectTable.LocalPlayer;
+
+        if (player == null)
+            return;
+
+        Vector2 normalized = MapCoordinateConverter.WorldToMapNormalized(player.Position, transform);
+        this.pan = -(normalized - new Vector2(0.5f)) * BaseMapDisplaySize * this.zoom;
+    }
+
+    private void FitGraphToCanvas(
+        List<NavNodeSnapshot> visibleNodes,
+        MapTransformSnapshot transform,
+        Vector2 canvasSize)
+    {
+        if (visibleNodes.Count == 0)
+            return;
+
+        Vector2 min = new(float.MaxValue, float.MaxValue);
+        Vector2 max = new(float.MinValue, float.MinValue);
+
+        foreach (var node in visibleNodes)
+        {
+            Vector2 normalized = MapCoordinateConverter.WorldToMapNormalized(node.Position, transform);
+            min = Vector2.Min(min, normalized);
+            max = Vector2.Max(max, normalized);
+        }
+
+        Vector2 span = Vector2.Max(max - min, new Vector2(0.02f));
+        float zoomX = canvasSize.X * 0.85f / (BaseMapDisplaySize * MathF.Max(span.X, 0.02f));
+        float zoomY = canvasSize.Y * 0.85f / (BaseMapDisplaySize * MathF.Max(span.Y, 0.02f));
+
+        this.zoom = Math.Clamp(MathF.Min(zoomX, zoomY), 0.1f, 20.0f);
+
+        Vector2 graphCenter = (min + max) * 0.5f;
+        this.pan = -(graphCenter - new Vector2(0.5f)) * BaseMapDisplaySize * this.zoom;
+    }
+
+    private IDalamudTextureWrap? GetCurrentMapTexture(MapTransformSnapshot transform)
+    {
+        string path = transform.TexturePath;
+
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        if (this.mapTexture != null && this.loadedTexturePath == path)
             return this.mapTexture;
 
-        if (this.failedMapTerritoryId == territoryId)
+        if (this.failedTexturePath == path)
             return null;
 
         this.mapTexture?.Dispose();
         this.mapTexture = null;
-        this.loadedMapTerritoryId = territoryId;
-
-        var agentMap = AgentMap.Instance();
-
-        if (agentMap == null)
-        {
-            this.failedMapTerritoryId = territoryId;
-            return null;
-        }
-
-        string path = agentMap->CurrentMapPath.ToString();
-
-        if (string.IsNullOrWhiteSpace(path))
-            path = agentMap->SelectedMapPath.ToString();
-
-        if (string.IsNullOrWhiteSpace(path))
-            path = agentMap->CurrentMapBgPath.ToString();
-
-        if (string.IsNullOrWhiteSpace(path))
-            path = agentMap->SelectedMapBgPath.ToString();
-
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            this.failedMapTerritoryId = territoryId;
-            return null;
-        }
+        this.loadedTexturePath = path;
 
         string basePath = path.EndsWith(".tex", StringComparison.OrdinalIgnoreCase)
             ? path[..^4]
@@ -617,7 +670,7 @@ public sealed class MapWindow : Window, IDisposable
 
                 if (this.mapTexture != null)
                 {
-                    this.failedMapTerritoryId = 0;
+                    this.failedTexturePath = string.Empty;
                     return this.mapTexture;
                 }
             }
@@ -627,7 +680,8 @@ public sealed class MapWindow : Window, IDisposable
             }
         }
 
-        this.failedMapTerritoryId = territoryId;
+        this.loadedTexturePath = string.Empty;
+        this.failedTexturePath = path;
         return null;
     }
 }

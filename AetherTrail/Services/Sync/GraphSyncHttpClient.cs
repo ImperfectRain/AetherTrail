@@ -1,3 +1,5 @@
+using System;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -19,8 +21,8 @@ public static class GraphSyncHttpClient
 
     public static async Task<bool> UploadAsync(GraphSyncPacket packet)
     {
-        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
+        string baseUrl = GetValidatedBaseUrl();
+        string room = GetEscapedRoomCode();
 
         string json = JsonSerializer.Serialize(packet, JsonOptions);
 
@@ -46,8 +48,8 @@ public static class GraphSyncHttpClient
 
     public static async Task<GraphSyncPacket?> DownloadAsync(uint territoryId)
     {
-        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
+        string baseUrl = GetValidatedBaseUrl();
+        string room = GetEscapedRoomCode();
 
         var response = await Client.GetAsync(
             $"{baseUrl}/rooms/{room}/graphs/{territoryId}"
@@ -65,37 +67,10 @@ public static class GraphSyncHttpClient
         return JsonSerializer.Deserialize<GraphSyncPacket>(json, JsonOptions);
     }
 
-    public static async Task<bool> UploadPresenceAsync(PartySyncPresence presence)
-    {
-        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
-
-        string json = JsonSerializer.Serialize(presence, JsonOptions);
-
-        using var content = new StringContent(
-            json,
-            Encoding.UTF8,
-            "application/json"
-        );
-
-        var response = await Client.PostAsync(
-            $"{baseUrl}/rooms/{room}/presence/{presence.TerritoryId}",
-            content
-        );
-
-        if (!response.IsSuccessStatusCode)
-        {
-            string error = await response.Content.ReadAsStringAsync();
-            Plugin.Log.Warning($"AetherTrail presence upload failed: {(int)response.StatusCode} {error}");
-        }
-
-        return response.IsSuccessStatusCode;
-    }
-
     public static async Task<List<PartySyncPresence>> SyncPresenceAsync(PartySyncPresence presence)
     {
-        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
+        string baseUrl = GetValidatedBaseUrl();
+        string room = GetEscapedRoomCode();
 
         string json = JsonSerializer.Serialize(presence);
 
@@ -119,25 +94,29 @@ public static class GraphSyncHttpClient
             ?? new List<PartySyncPresence>();
     }
 
-    public static async Task<List<PartySyncPresence>> DownloadPresenceAsync(uint territoryId)
+    private static string GetValidatedBaseUrl()
     {
-        string baseUrl = Plugin.Instance.Configuration.SyncServerUrl.TrimEnd('/');
-        string room = Plugin.Instance.Configuration.SyncRoomCode.Trim();
+        string configuredUrl = Plugin.Instance.Configuration.SyncServerUrl.Trim();
 
-        var response = await Client.GetAsync(
-            $"{baseUrl}/rooms/{room}/presence/{territoryId}"
-        );
+        if (!Uri.TryCreate(configuredUrl, UriKind.Absolute, out var uri))
+            throw new InvalidOperationException("AetherTrail sync server URL is invalid.");
 
-        if (!response.IsSuccessStatusCode)
-        {
-            string error = await response.Content.ReadAsStringAsync();
-            Plugin.Log.Warning($"AetherTrail presence download failed: {(int)response.StatusCode} {error}");
-            return new List<PartySyncPresence>();
-        }
+        bool isLocalhost =
+            string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(uri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(uri.Host, "::1", StringComparison.OrdinalIgnoreCase);
 
-        string json = await response.Content.ReadAsStringAsync();
+        if (!isLocalhost && uri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("AetherTrail sync requires HTTPS unless using localhost.");
 
-        return JsonSerializer.Deserialize<List<PartySyncPresence>>(json, JsonOptions)
-            ?? new List<PartySyncPresence>();
+        if (!isLocalhost && IPAddress.TryParse(uri.Host, out _))
+            throw new InvalidOperationException("AetherTrail sync server must use a DNS hostname.");
+
+        return configuredUrl.TrimEnd('/');
+    }
+
+    private static string GetEscapedRoomCode()
+    {
+        return Uri.EscapeDataString(Plugin.Instance.Configuration.SyncRoomCode.Trim());
     }
 }

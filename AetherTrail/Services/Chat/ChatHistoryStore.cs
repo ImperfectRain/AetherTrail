@@ -90,6 +90,14 @@ public static class ChatHistoryStore
         );
     }
 
+    public static void Clear(string room)
+    {
+        string path = GetChatPath(room);
+
+        if (File.Exists(path))
+            File.Delete(path);
+    }
+
     private static List<ChatMessage> TrimToCharacterLimit(
         List<ChatMessage> messages,
         int maxCharacters)

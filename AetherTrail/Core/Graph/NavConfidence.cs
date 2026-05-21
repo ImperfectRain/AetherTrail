@@ -69,9 +69,6 @@ public static class NavConfidence
 
     public static void IncrementTraversal(NavNode node, string linkedNodeId)
     {
-        if (!NavLinkTraversalTracker.CanIncrease(node.Id, linkedNodeId))
-            return;
-
         int current = node.LinkConfidence.TryGetValue(linkedNodeId, out int value)
             ? value
             : NewLocalConfidence();
@@ -79,10 +76,18 @@ public static class NavConfidence
         node.LinkConfidence[linkedNodeId] = IncreaseTraversal(current);
     }
 
-    public static void SetImportedLinkConfidence(NavNode a, NavNode b)
+    public static void MergeLinkConfidence(NavNode a, NavNode b, int incomingConfidence)
     {
-        a.LinkConfidence[b.Id] = ImportedConfidence();
-        b.LinkConfidence[a.Id] = ImportedConfidence();
+        int merged = Clamp(incomingConfidence);
+
+        if (a.LinkConfidence.TryGetValue(b.Id, out int aValue))
+            merged = Math.Max(merged, Clamp(aValue));
+
+        if (b.LinkConfidence.TryGetValue(a.Id, out int bValue))
+            merged = Math.Max(merged, Clamp(bValue));
+
+        a.LinkConfidence[b.Id] = merged;
+        b.LinkConfidence[a.Id] = merged;
     }
 
     public static void NormalizeNodeConfidence(NavNode node)

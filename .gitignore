@@ -5,10 +5,12 @@ obj/
 *.suo
 *.cache
 *.log
-
+AT-Master Old Format/
 pluginConfigs/
 Graphs/
 Exports/
 Imports/
 SyncIn/
 SyncOut/
+
+AT-Master Old Format/

@@ -15,27 +15,58 @@ public static class NavPathfinder
     Vector3 endPosition,
     NavNode endNode)
     {
-        var nodePath = AStar(graph, startNode, endNode);
+        var result = FindGraphPathBetweenNodesWithCost(
+            graph,
+            startPosition,
+            startNode,
+            endPosition,
+            endNode);
 
-        if (nodePath.Count == 0)
-            return new List<Vector3>();
+        return result.Success
+            ? result.Points
+            : new List<Vector3>();
+    }
+
+    public static NavPathResult FindGraphPathBetweenNodesWithCost(
+    NavGraph graph,
+    Vector3 startPosition,
+    NavNode startNode,
+    Vector3 endPosition,
+    NavNode endNode)
+    {
+        var search = AStar(graph, startNode, endNode);
+
+        if (!search.Success || search.Nodes.Count == 0)
+        {
+            return new NavPathResult
+            {
+                Success = false,
+                FailureReason = search.FailureReason
+            };
+        }
 
         List<Vector3> path = new();
 
         path.Add(startPosition + new Vector3(0f, 0.35f, 0f));
 
-        foreach (var node in nodePath)
+        foreach (var node in search.Nodes)
             path.Add(node.Position + new Vector3(0f, 0.35f, 0f));
 
         path.Add(endPosition + new Vector3(0f, 0.35f, 0f));
 
-        return SmoothPath(SimplifyPath(path));
+        return new NavPathResult
+        {
+            Success = true,
+            Points = SmoothPath(SimplifyPath(path)),
+            Cost = search.Cost
+        };
     }
 
     public static bool HasRoute(NavGraph graph, NavNode startNode, NavNode endNode)
     {
-        return AStar(graph, startNode, endNode).Count > 0;
+        return AStar(graph, startNode, endNode).Success;
     }
+
     public static List<Vector3> FindGraphPath(NavGraph graph, Vector3 start, Vector3 end)
     {
         var startNode = graph.GetNearestNode(start);
@@ -44,16 +75,16 @@ public static class NavPathfinder
         if (startNode == null || endNode == null)
             return new List<Vector3>();
 
-        var nodePath = AStar(graph, startNode, endNode);
+        var search = AStar(graph, startNode, endNode);
 
-        if (nodePath.Count == 0)
+        if (!search.Success || search.Nodes.Count == 0)
             return new List<Vector3>();
 
         List<Vector3> path = new();
 
         path.Add(start + new Vector3(0f, 0.35f, 0f));
 
-        foreach (var node in nodePath)
+        foreach (var node in search.Nodes)
             path.Add(node.Position + new Vector3(0f, 0.35f, 0f));
 
         path.Add(end + new Vector3(0f, 0.35f, 0f));
@@ -61,9 +92,9 @@ public static class NavPathfinder
         return SmoothPath(SimplifyPath(path));
     }
 
-    private static List<NavNode> AStar(NavGraph graph, NavNode start, NavNode goal)
+    private static NavSearchResult AStar(NavGraph graph, NavNode start, NavNode goal)
     {
-        HashSet<string> open = new() { start.Id };
+        PriorityQueue<string, float> open = new();
         HashSet<string> closed = new();
 
         Dictionary<string, string> cameFrom = new();
@@ -77,18 +108,30 @@ public static class NavPathfinder
             [start.Id] = Heuristic(start, goal)
         };
 
+        open.Enqueue(start.Id, fScore[start.Id]);
+
         while (open.Count > 0)
         {
-            string currentId = open.OrderBy(id => fScore.GetValueOrDefault(id, float.MaxValue)).First();
+            string currentId = open.Dequeue();
+
+            if (closed.Contains(currentId))
+                continue;
+
             var current = graph.GetNode(currentId);
 
             if (current == null)
-                break;
+                continue;
 
             if (current.Id == goal.Id)
-                return ReconstructPath(graph, cameFrom, current.Id);
+            {
+                return new NavSearchResult
+                {
+                    Success = true,
+                    Nodes = ReconstructPath(graph, cameFrom, current.Id),
+                    Cost = gScore.GetValueOrDefault(current.Id, 0f)
+                };
+            }
 
-            open.Remove(current.Id);
             closed.Add(current.Id);
 
             foreach (string neighborId in current.Links)
@@ -103,22 +146,25 @@ public static class NavPathfinder
 
                 int confidence = current.LinkConfidence.TryGetValue(neighbor.Id, out int value)
                     ? value
-                    : 1;
+                    : NavConfidence.ImportedConfidence();
 
                 float tentativeG = gScore[current.Id] + GetTraversalCost(current.Position, neighbor.Position, confidence);
 
-                if (!open.Contains(neighbor.Id))
-                    open.Add(neighbor.Id);
-                else if (tentativeG >= gScore.GetValueOrDefault(neighbor.Id, float.MaxValue))
+                if (tentativeG >= gScore.GetValueOrDefault(neighbor.Id, float.MaxValue))
                     continue;
 
                 cameFrom[neighbor.Id] = current.Id;
                 gScore[neighbor.Id] = tentativeG;
                 fScore[neighbor.Id] = tentativeG + Heuristic(neighbor, goal);
+                open.Enqueue(neighbor.Id, fScore[neighbor.Id]);
             }
         }
 
-        return new List<NavNode>();
+        return new NavSearchResult
+        {
+            Success = false,
+            FailureReason = "No connected graph route found."
+        };
     }
 
     private static float GetTraversalCost(Vector3 from, Vector3 to, int confidence)
@@ -143,11 +189,18 @@ public static class NavPathfinder
         if (distance > 16.0f)
             cost += distance * 1.5f;
 
-        float confidenceDiscount = MathF.Min(confidence, 20) * 0.025f;
+        confidence = NavConfidence.Clamp(confidence);
 
-        cost *= 1.0f - confidenceDiscount;
+        if (confidence < NavConfidence.Imported)
+            cost += distance * 1.5f;
+        else if (confidence < NavConfidence.NewLocal)
+            cost += distance * 0.65f;
+        else if (confidence >= NavConfidence.Trusted)
+            cost *= 0.86f;
+        else if (confidence >= NavConfidence.NewLocal)
+            cost *= 0.94f;
 
-        return MathF.Max(cost, distance * 0.5f);
+        return MathF.Max(cost, distance * 0.75f);
     }
 
     private static float Heuristic(NavNode a, NavNode b)
@@ -228,5 +281,13 @@ public static class NavPathfinder
         smoothed.Add(path[^1]);
 
         return smoothed;
+    }
+
+    private sealed class NavSearchResult
+    {
+        public bool Success { get; init; }
+        public List<NavNode> Nodes { get; init; } = new();
+        public float Cost { get; init; }
+        public string FailureReason { get; init; } = string.Empty;
     }
 }
