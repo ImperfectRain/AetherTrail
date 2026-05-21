@@ -64,10 +64,6 @@ public sealed class PartySyncService
         {
             this.lastGraphSync = now;
 
-            Plugin.ChatGui.Print(
-                $"AetherTrail graph sync tick: Room={config.SyncRoomCode}, Server={config.SyncServerUrl}"
-            );
-
             await SyncCurrentTerritory();
         }
     }
@@ -81,28 +77,17 @@ public sealed class PartySyncService
         {
             var config = Plugin.Instance.Configuration;
             uint territoryId = Plugin.ClientState.TerritoryType;
-            string roomCode = config.SyncRoomCode;
 
             var localGraphBefore = NavigationManager.GetGraph(territoryId);
-
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Room: {roomCode}");
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Upload territory: {territoryId}");
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Local nodes before upload: {localGraphBefore.Nodes.Count}");
-
             var packet = NavigationManager.CreateSyncPacket(territoryId);
-
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Packet nodes uploading: {packet.Graph.Nodes.Count}");
 
             bool uploaded = await GraphSyncHttpClient.UploadAsync(packet);
 
-            Plugin.ChatGui.Print(uploaded
-                ? "[AetherTrail Sync] Upload successful."
-                : "[AetherTrail Sync] Upload failed.");
-
             if (!uploaded)
+            {
+                Plugin.ChatGui.Print("[AetherTrail Sync] Upload failed.");
                 return;
-
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Download territory: {territoryId}");
+            }
 
             var downloaded = await GraphSyncHttpClient.DownloadAsync(territoryId);
 
@@ -111,9 +96,6 @@ public sealed class PartySyncService
                 Plugin.ChatGui.Print("[AetherTrail Sync] Download failed or no graph exists.");
                 return;
             }
-
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Downloaded packet territory: {downloaded.TerritoryId}");
-            Plugin.ChatGui.Print($"[AetherTrail Sync] Downloaded packet nodes: {downloaded.Graph.Nodes.Count}");
 
             if (downloaded.TerritoryId != territoryId)
             {
@@ -127,8 +109,11 @@ public sealed class PartySyncService
 
                 var localGraphAfter = NavigationManager.GetGraph(territoryId);
 
-                Plugin.ChatGui.Print($"[AetherTrail Sync] Imported new nodes: {importedNodes}");
-                Plugin.ChatGui.Print($"[AetherTrail Sync] Local nodes after import: {localGraphAfter.Nodes.Count}");
+                Plugin.Log.Information(
+                    $"AetherTrail graph sync complete for territory {territoryId}: " +
+                    $"{localGraphBefore.Nodes.Count} -> {localGraphAfter.Nodes.Count} nodes, " +
+                    $"{importedNodes} imported."
+                );
             });
         }
         catch (Exception ex)
@@ -187,9 +172,6 @@ public sealed class PartySyncService
 
         try
         {
-            Plugin.Log.Information(
-                $"[AetherTrail Presence Debug] SyncPresence room={Plugin.Instance.Configuration.SyncRoomCode} territory={territoryId}"
-            );
             var presences = await GraphSyncHttpClient.SyncPresenceAsync(localPresence);
 
             string selfId = Plugin.Instance.Configuration.SyncClientId;

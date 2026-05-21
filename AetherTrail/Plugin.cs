@@ -1,5 +1,4 @@
 using AetherTrail.Windows;
-using AetherTrail.Chat;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -9,19 +8,11 @@ using System;
 using System.Threading.Tasks;
 using System.IO;
 using System.Numerics;
-using System.Collections.Generic;
-
-
 
 namespace AetherTrail;
 
 public sealed class Plugin : IDalamudPlugin
-
 {
-    public void ToggleChatWindow()
-    {
-        this.chatWindow.Toggle();
-    }
     public static Plugin Instance { get; private set; } = null!;
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
@@ -37,7 +28,6 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
 
     private const string CommandName = "/trailflag";
-    private const string DebugCommandName = "/atraildebug";
     private const string NodeCommandName = "/atrailnode";
     private const string StatsCommandName = "/atrailstats";
     private const string RecordCommandName = "/atrailrecord";
@@ -49,13 +39,11 @@ public sealed class Plugin : IDalamudPlugin
     private const string CleanFlightCommandName = "/atrailcleanflight";
     private const string SplitCrossingsCommandName = "/atrailsplitcrossings";
     private const string CleanRedundantLinksCommandName = "/atrailcleanlinks";
-    private const string QuestDebugCommandName = "/atrailquestdebug";
     private const string SyncExportCommandName = "/atrailsyncexport";
     private const string SyncImportCommandName = "/atrailsyncimport";
     private const string SyncPreviewCommandName = "/atrailsyncpreview";
     private const string MapCommandName = "/atrailmap";
     private const string ToolsCommandName = "/atrailtools";
-    private const string ChatCommandName = "/atrailchat";
 
     private bool trailEnabled;
     private bool recordingEnabled;
@@ -82,13 +70,8 @@ public sealed class Plugin : IDalamudPlugin
     private MainWindow MainWindow { get; init; }
     private MapWindow MapWindow { get; init; }
     private readonly ToolsWindow toolsWindow;
-    public ChatService ChatService { get; }
-
-    private readonly ChatWindow chatWindow;
 
     public TrailRenderer TrailRenderer => this.trailRenderer;
-
-
 
     public Plugin()
     {
@@ -111,106 +94,13 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow = new MainWindow(this, goatImagePath);
         MapWindow = new MapWindow(this);
         this.toolsWindow = new ToolsWindow(this);
-        this.ChatService = new ChatService();
-
-        this.chatWindow = new ChatWindow(this);
-        this.WindowSystem.AddWindow(this.chatWindow);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(MapWindow);
         this.WindowSystem.AddWindow(this.toolsWindow);
 
-
-
-        CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
-        {
-            HelpMessage = "Toggle AetherTrail navigation markers toward your current map flag."
-        });
-
-        CommandManager.AddHandler(DebugCommandName, new CommandInfo(OnDebugCommand)
-        {
-            HelpMessage = "Print AetherTrail debug info."
-        });
-        CommandManager.AddHandler(NodeCommandName, new CommandInfo(OnNodeCommand)
-        {
-            HelpMessage = "Print your current position as an AetherTrail nav node."
-        });
-        CommandManager.AddHandler(StatsCommandName, new CommandInfo(OnStatsCommand)
-        {
-            HelpMessage = "Print AetherTrail graph stats for the current territory."
-        });
-        CommandManager.AddHandler(RecordCommandName, new CommandInfo(OnRecordCommand)
-        {
-            HelpMessage = "Toggle AetherTrail graph recording."
-        });
-        CommandManager.AddHandler(ReloadCommandName, new CommandInfo(OnReloadCommand)
-        {
-            HelpMessage = "Reload AetherTrail graph files from disk."
-        });
-        CommandManager.AddHandler(GraphCommandName, new CommandInfo(OnGraphCommand)
-        {
-            HelpMessage = "Toggle AetherTrail graph debug rendering."
-        });
-        CommandManager.AddHandler(ExportCommandName, new CommandInfo(OnExportCommand)
-        {
-            HelpMessage = "Export the current territory's AetherTrail graph."
-        });
-                CommandManager.AddHandler(ImportCommandName, new CommandInfo(OnImportCommand)
-        {
-            HelpMessage = "Import the current territory's AetherTrail graph."
-        });
-        CommandManager.AddHandler(PruneCommandName, new CommandInfo(OnPruneCommand)
-        {
-            HelpMessage = "Clean up the current territory's AetherTrail graph."
-        });
-        CommandManager.AddHandler(SplitCrossingsCommandName, new CommandInfo(OnSplitCrossingsCommand)
-        {
-            HelpMessage = "Split existing crossing ground links in the current AetherTrail graph."
-        });
-        CommandManager.AddHandler(CleanRedundantLinksCommandName, new CommandInfo(OnCleanRedundantLinksCommand)
-        {
-            HelpMessage = "Remove redundant overlapping AetherTrail graph links in the current territory."
-        });
-        CommandManager.AddHandler(CleanFlightCommandName, new CommandInfo(OnCleanFlightCommand)
-        {
-            HelpMessage = "Remove flight-mode nodes from the current AetherTrail graph."
-        });
-        CommandManager.AddHandler("/atrailresetconfidence", new CommandInfo(OnResetConfidenceCommand)
-        {
-            HelpMessage = "Reset all AetherTrail link confidence in the current territory to default."
-        });
-        CommandManager.AddHandler(QuestDebugCommandName, new CommandInfo(OnQuestDebugCommand)
-        {
-            HelpMessage = "Print AetherTrail quest debug info."
-        });
-        CommandManager.AddHandler(SyncExportCommandName, new CommandInfo(OnSyncExportCommand)
-        {
-            HelpMessage = "Export current territory graph as an AetherTrail sync packet."
-        });
-
-        CommandManager.AddHandler(SyncImportCommandName, new CommandInfo(OnSyncImportCommand)
-        {
-            HelpMessage = "Import current territory graph from an AetherTrail sync packet."
-        });
-        CommandManager.AddHandler(SyncPreviewCommandName, new CommandInfo(OnSyncPreviewCommand)
-        {
-            HelpMessage = "Preview an AetherTrail sync packet before importing."
-        });
-        CommandManager.AddHandler(MapCommandName, new CommandInfo(OnMapCommand)
-        {
-            HelpMessage = "Open the AetherTrail graph map."
-        });
-        CommandManager.AddHandler(ToolsCommandName, new CommandInfo(OnToolsCommand)
-        {
-            HelpMessage = "Open the AetherTrail tools window."
-        });
-        CommandManager.AddHandler(ChatCommandName, new CommandInfo(OnChatCommand)
-        {
-            HelpMessage = "Open the AetherTrail chat window."
-        });
-
-
+        RegisterCommands();
         PluginInterface.UiBuilder.Draw += DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
@@ -235,34 +125,68 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         MainWindow.Dispose();
         MapWindow.Dispose();
-        this.chatWindow.Dispose();
-        this.WindowSystem.RemoveWindow(this.chatWindow);
 
-
-        CommandManager.RemoveHandler(CommandName);
-        CommandManager.RemoveHandler(DebugCommandName);
-        CommandManager.RemoveHandler(NodeCommandName);
-        CommandManager.RemoveHandler(StatsCommandName);
-        CommandManager.RemoveHandler(RecordCommandName);
-        CommandManager.RemoveHandler(ReloadCommandName);
-        CommandManager.RemoveHandler(GraphCommandName);
-        CommandManager.RemoveHandler(ExportCommandName);
-        CommandManager.RemoveHandler(ImportCommandName);
-        CommandManager.RemoveHandler(PruneCommandName);
-        CommandManager.RemoveHandler(QuestDebugCommandName);
-        CommandManager.RemoveHandler(SyncExportCommandName);
-        CommandManager.RemoveHandler(SyncImportCommandName);
-        CommandManager.RemoveHandler(SyncPreviewCommandName);
-        CommandManager.RemoveHandler(CleanFlightCommandName);
-        CommandManager.RemoveHandler(MapCommandName);
-        CommandManager.RemoveHandler(SplitCrossingsCommandName);
-        CommandManager.RemoveHandler(CleanRedundantLinksCommandName);
-        CommandManager.RemoveHandler(ToolsCommandName);
-        CommandManager.RemoveHandler(ChatCommandName);
-        //trying to clean up implementation
-        CommandManager.RemoveHandler("/atrailresetconfidence");
+        UnregisterCommands();
 
         Log.Information("AetherTrail unloaded.");
+    }
+
+    private void RegisterCommands()
+    {
+        AddCommand(CommandName, OnCommand, "Toggle AetherTrail navigation markers toward your current map flag.");
+        AddCommand(NodeCommandName, OnNodeCommand, "Print your current position as an AetherTrail nav node.");
+        AddCommand(StatsCommandName, OnStatsCommand, "Print AetherTrail graph stats for the current territory.");
+        AddCommand(RecordCommandName, OnRecordCommand, "Toggle AetherTrail graph recording.");
+        AddCommand(ReloadCommandName, OnReloadCommand, "Reload AetherTrail graph files from disk.");
+        AddCommand(GraphCommandName, OnGraphCommand, "Toggle AetherTrail graph debug rendering.");
+        AddCommand(ExportCommandName, OnExportCommand, "Export the current territory's AetherTrail graph.");
+        AddCommand(ImportCommandName, OnImportCommand, "Import the current territory's AetherTrail graph.");
+        AddCommand(PruneCommandName, OnPruneCommand, "Clean up the current territory's AetherTrail graph.");
+        AddCommand(SplitCrossingsCommandName, OnSplitCrossingsCommand, "Split existing crossing ground links in the current AetherTrail graph.");
+        AddCommand(CleanRedundantLinksCommandName, OnCleanRedundantLinksCommand, "Remove redundant overlapping AetherTrail graph links in the current territory.");
+        AddCommand(CleanFlightCommandName, OnCleanFlightCommand, "Remove flight-mode nodes from the current AetherTrail graph.");
+        AddCommand("/atrailresetconfidence", OnResetConfidenceCommand, "Reset all AetherTrail link confidence in the current territory to default.");
+        AddCommand(SyncExportCommandName, OnSyncExportCommand, "Export current territory graph as an AetherTrail sync packet.");
+        AddCommand(SyncImportCommandName, OnSyncImportCommand, "Import current territory graph from an AetherTrail sync packet.");
+        AddCommand(SyncPreviewCommandName, OnSyncPreviewCommand, "Preview an AetherTrail sync packet before importing.");
+        AddCommand(MapCommandName, OnMapCommand, "Open the AetherTrail graph map.");
+        AddCommand(ToolsCommandName, OnToolsCommand, "Open the AetherTrail tools window.");
+    }
+
+    private static void AddCommand(string command, IReadOnlyCommandInfo.HandlerDelegate handler, string helpMessage)
+    {
+        CommandManager.AddHandler(command, new CommandInfo(handler)
+        {
+            HelpMessage = helpMessage
+        });
+    }
+
+    private static void UnregisterCommands()
+    {
+        foreach (string command in new[]
+        {
+            CommandName,
+            NodeCommandName,
+            StatsCommandName,
+            RecordCommandName,
+            ReloadCommandName,
+            GraphCommandName,
+            ExportCommandName,
+            ImportCommandName,
+            PruneCommandName,
+            SyncExportCommandName,
+            SyncImportCommandName,
+            SyncPreviewCommandName,
+            CleanFlightCommandName,
+            MapCommandName,
+            SplitCrossingsCommandName,
+            CleanRedundantLinksCommandName,
+            ToolsCommandName,
+            "/atrailresetconfidence"
+        })
+        {
+            CommandManager.RemoveHandler(command);
+        }
     }
 
     private void UpdateRecording()
@@ -333,7 +257,6 @@ public sealed class Plugin : IDalamudPlugin
         NativeUiOcclusionService.BeginFrame();
         UiOcclusionService.BeginFrame();
         GraphMutationQueue.Process();
-        GraphMutationQueue.Process();
 
         WindowSystem.Draw();
 
@@ -351,26 +274,7 @@ public sealed class Plugin : IDalamudPlugin
         );
 
         partySyncService.Update();
-        this.ChatService.Update();
         NavigationManager.FlushDirtyGraphs();
-    }
-
-    private void OnDebugCommand(string command, string args)
-    {
-        var type = GameGui.GetType();
-
-        ChatGui.Print($"AetherTrail Debug: IGameGui runtime type = {type.FullName}");
-
-        foreach (var property in type.GetProperties())
-        {
-            ChatGui.Print($"Property: {property.Name}");
-        }
-
-        foreach (var method in type.GetMethods())
-        {
-            if (method.Name.Contains("Map") || method.Name.Contains("Flag") || method.Name.Contains("Marker"))
-                ChatGui.Print($"Method: {method.Name}");
-        }
     }
 
     private void OnNodeCommand(string command, string args)
@@ -489,19 +393,6 @@ public sealed class Plugin : IDalamudPlugin
         );
     }
 
-    private void OnQuestDebugCommand(string command, string args)
-    {
-        uint questId = QuestService.GetTrackedQuestId();
-        byte sequence = QuestService.GetTrackedQuestSequence();
-
-        ChatGui.Print($"AetherTrail Quest Debug: tracked quest id = {questId}");
-        ChatGui.Print($"AetherTrail Quest Debug: sequence = {sequence}");
-
-        QuestService.PrintTrackedQuestWorkDebug();
-        QuestService.PrintQuestSheetDebug(questId);
-        QuestService.PrintNearbyObjectsDebug(45f);
-    }
-
     private void OnSyncExportCommand(string command, string args)
     {
         uint territoryId = ClientState.TerritoryType;
@@ -549,34 +440,6 @@ public sealed class Plugin : IDalamudPlugin
     private void OnToolsCommand(string command, string args)
     {
         this.toolsWindow.Toggle();
-    }
-
-    private void OnChatCommand(string command, string args)
-    {
-        this.chatWindow.Toggle();
-    }
-
-    private void PrintTypeMembers(Type type)
-    {
-        ChatGui.Print($"--- {type.Name} ---");
-
-        foreach (var field in type.GetFields())
-            ChatGui.Print($"Field: {field.Name} : {field.FieldType.Name}");
-
-        foreach (var property in type.GetProperties())
-            ChatGui.Print($"Property: {property.Name} : {property.PropertyType.Name}");
-
-        foreach (var method in type.GetMethods())
-        {
-            if (method.Name.Contains("Quest", StringComparison.OrdinalIgnoreCase) ||
-                method.Name.Contains("Map", StringComparison.OrdinalIgnoreCase) ||
-                method.Name.Contains("Marker", StringComparison.OrdinalIgnoreCase) ||
-                method.Name.Contains("Open", StringComparison.OrdinalIgnoreCase) ||
-                method.Name.Contains("Show", StringComparison.OrdinalIgnoreCase))
-            {
-                ChatGui.Print($"Method: {method.Name}");
-            }
-        }
     }
 
     public void ExportCurrentTerritoryGraph()

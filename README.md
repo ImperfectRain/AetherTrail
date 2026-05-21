@@ -1,30 +1,165 @@
-AI Usage Disclosure: used for documentation analysis, structure/code review, function rewrites, function replacements when I personally was unable to figure out a solution (Notably during map rendering stage and initial node systems.) I understand how the code functions and am working on manually cleaning the project up, I can field any questions.
+# AetherTrail
 
-NOTICE: this plugin currently connects to a railway server for party sync. It is purely opt-in, and you connect to other users via a shared passkey, however those with security concerns should not install this plugin until the server structure has been reviewed by someone more knowledgable than I.
+AI Usage Disclosure
 
-This project started as a way to display worldspace navigation towards quest data, and has now evolved into something I feel is quite feature rich. The inital issue I ran into was how I was supposed to draw navigation into the world without relying on any dependancies. The main way to get that data was by involving a pre-existing plugin that cannot be used if this was to be an official repo submission.
+AI has been used for documentation analysis, structure/code review, function rewrites, and function replacements when I personally could not figure out a clean solution. The most notable areas were the map rendering stage and early node/pathfinding systems. I understand how the code functions, I am actively cleaning it up, and I can field questions about the implementation.
 
-Nodes are dynamically plotted as you travel the overworld, and linked together in chains. This means if you start from scratch and don't use then file sharing server or manual imports/exports, you will have no navigation stored to XIVlauncher's pluginconfig folder, but as you travel the world and make a more consistent high-quality node network, the pathfinding gets more and more reliable as your character learn's the world layout, essentially the concept of desire paths in real life but translated into a game mechanic. TL;DR, as you walk YOU create a personal navmesh.
+Notice
 
-Importing/Exporting
-Placing this section high on the readme as it's one of the more convoluted features both on the backend and user-experience. There are two (technically 3) ways of doing this. Manual file merging/loading, or the yet to be finalized server syncing. To start if you open the AetherTrails window, you will see an import and export button, self explanatory. These buttons will output your node graph for the current zone into the GraphExport folder in pluginconfig, and import will load files in the GraphImport folder. This allows you to share your progress to other players to give them an edge when it comes to navigation, or be on the receiving end either for filling in an empty map, or improving the quality (hopefully) of your current and incomplete node graph. There's also the method of manually replacing the files in your nodegraphs folder with other ones, but then you lose access to your progress that you walked oh so hard for. But wait, what's the difference between swapping files and importing them, doesn't it accomplish the same thing? WRONG, importing a file will take nodes that you currently don't have, place them in your existing node graph, and then clean it up. Redundant nodes? Gone. Nodes close but not quite on your nodes? Vanished. Basically it interpolates the two files and gives you a consistent output of both inputs. This means if you and a friend have taken close but not identical paths, you don't need to worry about your graph being filled with uneeded data. If I am remembering the default params right, there can only be one node every 5 yalms in most use cases, so it really will take the visual of clean paths and a quaint little wireframe of paths travelled. There's also party sync. Little shaky on it right now, but you can press a button to generate a code, give that code to a friend, and then if you two are in the same area you both upload, download, and merge your graphs automatically. This feature is intended to be an enjoyable form of collaboration between groups of friends, or an easy way for mentors to provide data to new players.
+This plugin currently has optional networked party sync. Party sync connects to a configured sync server, uses a shared room code, and is off unless the user enables it. If you are uncomfortable with external sync features, do not enable party sync or do not install the plugin until the server side has been reviewed by someone more knowledgeable than I am.
 
-Features
+AetherTrail started as a way to draw world-space navigation toward quest and map-flag data without relying on another navigation plugin. It has grown into a personal navigation graph system. As you move through the overworld, the plugin records nodes, links them into paths, and slowly builds a local graph of where your character has actually traveled.
+
+The short version is that as you walk, you create a personal navmesh. Over time, that graph becomes more useful for routing, map review, imports, exports, and party collaboration.
+
+## What AetherTrail Does
+
+AetherTrail records movement through outdoor zones and turns that movement into a node graph. When you ask it to route toward a target, it tries to use the graph first, then falls back to a direct trail when it does not have enough local data yet.
+
+The system is intentionally incremental. A brand new user will not have a complete map on day one unless they import data or sync with someone else. The graph improves as the user travels, imports graph data, or collaborates with friends.
+
+## Current Player-Facing Features
+
+### World-Space Navigation Trail
+
+`/trailflag` toggles the main navigation trail. When enabled, AetherTrail looks for a target, usually your current map flag or tracked quest target, and draws a trail in the world.
+
+The trail prefers known graph routes when available. If the plugin does not have enough nodes for the current area yet, it can still draw a simpler direct path so the feature remains useful while the graph is young.
+
+### Automatic Node Recording
+
+AetherTrail can record your movement into local graph files. Nodes are placed as you travel, and links are created between nearby movement points. The idea is similar to desire paths, where the routes you actually walk become the routes the plugin trusts more.
+
+Recording can be enabled by default in settings. The graph is stored locally in the XIVLauncher plugin configuration folder.
+
+### Confidence-Based Routing
+
+Links have confidence values. Local movement and repeated traversal can make a route more trusted, while imported or less-used routes start more cautiously.
+
+This is meant to help the pathfinder prefer reliable, commonly traveled paths instead of treating every imported or newly discovered link as equally trustworthy.
+
+### Ground and Flight Awareness
+
+AetherTrail tracks traversal mode so walking routes and flying routes do not get treated as the same thing. This matters because a route that works in the air can be awful or impossible on foot.
+
+There are cleanup tools for removing flight nodes from the current territory if a graph gets polluted while testing.
+
+### Map Window
+
+The map window shows the current territory graph over the loaded in-game map texture. From there, you can view and adjust things like
+
+- current territory and map info
+- node and link display
+- ground/flying/unknown visibility toggles
+- confidence, density, and traversal display modes
+- active route display
+- player position display
+- zoom, pan, reset view, center player, and fit graph controls
+
+### Import and Export
+
+The main window has buttons to export and import the current territory graph.
+
+Export writes the current territory graph to the plugin config export folder. Import reads a graph file from the import folder and merges it into your current graph instead of replacing your progress.
+
+Importing is different from manually replacing files. AetherTrail attempts to merge useful incoming nodes, avoid duplicate nearby nodes, preserve existing local data, and clean up the result. This is intended to make graph sharing less destructive.
+
+### Party Sync
+
+Party sync is optional. A user can create or join a room code, then sync graph data with other users using the same room.
+
+When enabled, party sync can upload and download graph data for the current territory, merge downloaded data into the local graph, and share lightweight party presence so synced players can appear in the world overlay.
+
+The feature is meant for friends, mentors, or small groups that want to build and improve navigation data together. It is not required for normal local use.
+
+### Tools Window
+
+The tools window is for maintenance and testing. It shows current graph status and gives access to cleanup and sync actions.
+
+Current tool actions include syncing the current territory, pruning the current graph, splitting crossing links, cleaning redundant links, cleaning flight nodes, resetting link confidence, saving dirty graphs immediately, and exporting or reloading graph data.
+
+These tools can modify the current territory graph, so they are mainly intended for testing, cleanup, and recovery.
+
+### Settings
+
+The configuration window exposes the main tuning options.
+
+- recording enabled by default
+- data overlay visibility
+- node spacing
+- corner node spacing
+- direction-change sensitivity
+- teleport reset distance
+- session attach distance
+- trail dot size
+- trail dot spacing
+- trail colors
+- graph debug draw distance
+
+Most users should not need to touch every setting. They are exposed because the plugin is still being tuned and different movement styles can produce different graph quality.
+
+## Commands
+
+- `/trailflag` toggles the world-space trail.
+- `/atrailnode` prints the current player position as a nav node.
+- `/atrailstats` prints graph stats for the current territory.
+- `/atrailrecord` toggles graph recording.
+- `/atrailreload` reloads graph files from disk.
+- `/atrailgraph` toggles world-space graph rendering.
+- `/atrailexport` exports the current territory graph.
+- `/atrailimport` imports the current territory graph.
+- `/atrailprune` cleans the current territory graph.
+- `/atrailcleanflight` removes flight-mode nodes from the current territory graph.
+- `/atrailsplitcrossings` splits crossing ground links.
+- `/atrailcleanlinks` removes redundant overlapping links.
+- `/atrailresetconfidence` resets link confidence in the current territory.
+- `/atrailsyncexport` exports a sync packet.
+- `/atrailsyncimport` imports a sync packet.
+- `/atrailsyncpreview` previews a sync packet before importing.
+- `/atrailmap` opens the map window.
+- `/atrailtools` opens the tools window.
+
+## Network and Privacy Notes
+
+Local graph recording does not require the sync server.
+
+Party sync is the networked part of the plugin. It sends graph and presence data to the configured sync server for the room code you enter. The room code is not strong security; it is a shared passkey for small-group coordination.
+
+Chat-related code exists in the repository from earlier experiments, but chat is currently disabled and not exposed through the plugin UI or commands. I do not currently consider chat a core AetherTrail feature.
+
+## Current State
+
 Currently implemented
--import/export
--server framework
--quest pathfinding to the best of my ability
--more debug messages than is healthy to leave in a public build
--a map window that pulls the loaded map texture and overlays a top-down view of your area's nodes
--flight paths (this is a good one, basically if you fly a lot and then want to walk, the pathfinding trail won't tell your WoL to start walking into the sky)
--visible full node network in worldspace, see literally everywhere you or one of your import providers have walked
--low performance impact (initial testing pushed my 60fps below my usual, not frames are stable and match my regular plugin-disapled FPS)
--Confidence system so that routes take you through the most travelled paths, and steer you away from areas you may not want to (or can't) go.
 
-TO-DO/Wishlist
--improved mapping and possibly the ability to overlay features on the vanilla map window
--more feature rich confidence system with stat locks and more variables
--better pathing trail, currently is a big mess but hey, the blue line will mostly get you from A-B
--installed optional node masterfile, I would like to provide files for all important areas for users who may not want to participate in the player interaction systems and who also value the questing/flag help more than the personalized desire pathing
--much better visuals, the blue snake looks awful, eventually would like something that looks like a naturalistic aether current
+- local movement recording
+- local node graph storage
+- graph cleanup tools
+- map-flag and quest-target pathing
+- world-space trail rendering
+- world-space graph rendering
+- top-down map graph view
+- import/export graph sharing
+- confidence-aware pathfinding
+- ground/flying traversal separation
+- optional party graph sync
+- optional party presence display
 
+Still experimental
+
+- graph quality varies heavily by how much a zone has been traveled
+- party sync needs more privacy/security review
+- route quality can still be rough in awkward terrain
+- visual presentation is functional but not final
+- cleanup tools are powerful and still somewhat tester-oriented
+
+## TO-DO / Wishlist
+
+- Improve route visuals so the trail feels more like a natural aether current and less like a debug line.
+- Continue improving confidence scoring so trusted routes, imported routes, risky routes, and locked routes are easier to reason about.
+- Add stronger review documentation for all network behavior and server-side data handling.
+- Decide whether party sync belongs in the final review build or should remain an optional/experimental feature.
+- Provide optional starter graph files for users who want navigation help without participating in sync.
+- Improve map overlay polish, including clearer legends and better visual hierarchy.
+- Keep splitting large implementation files into smaller, easier-to-review systems.
+- Add tests for graph merge, pruning, confidence, and pathfinding behavior.
+- Revisit tools/debug UI so public builds expose only what normal users actually need.
