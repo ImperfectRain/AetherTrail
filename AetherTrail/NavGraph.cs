@@ -92,17 +92,27 @@ public sealed class NavGraph
     {
         lock (this.syncRoot)
         {
+            HashSet<string> seenIds = new();
+
             return this.Nodes
+                .Where(node =>
+                    !string.IsNullOrWhiteSpace(node.Id) &&
+                    seenIds.Add(node.Id))
                 .Select(node => new NavNodeSnapshot
                 {
                     Id = node.Id,
                     Position = node.Position,
                     TraversalMode = node.TraversalMode,
-                    Links = node.Links.ToList(),
-                    LinkConfidence = node.LinkConfidence.ToDictionary(
-                        pair => pair.Key,
-                        pair => pair.Value
-                    )
+                    Links = node.Links
+                        .Where(linkId => !string.IsNullOrWhiteSpace(linkId))
+                        .Distinct()
+                        .ToList(),
+                    LinkConfidence = node.LinkConfidence
+                        .GroupBy(pair => pair.Key)
+                        .ToDictionary(
+                            group => group.Key,
+                            group => group.Max(pair => pair.Value)
+                        )
                 })
                 .ToList();
         }

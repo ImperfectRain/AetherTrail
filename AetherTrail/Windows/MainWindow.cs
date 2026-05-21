@@ -20,6 +20,10 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
+        UiOcclusionService.AddRect(
+        ImGui.GetWindowPos(),
+        ImGui.GetWindowPos() + ImGui.GetWindowSize()
+        );
         uint territoryId = Plugin.ClientState.TerritoryType;
         int nodes = NavigationManager.GetNodeCount(territoryId);
         int links = NavigationManager.GetLinkCount(territoryId);

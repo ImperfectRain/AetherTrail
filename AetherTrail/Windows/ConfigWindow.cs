@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 
@@ -19,6 +20,10 @@ public class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
+        UiOcclusionService.AddRect(
+        ImGui.GetWindowPos(),
+        ImGui.GetWindowPos() + ImGui.GetWindowSize()
+        );
         var config = plugin.Configuration;
 
         bool recordingDefault = config.RecordingEnabledByDefault;
@@ -74,11 +79,48 @@ public class ConfigWindow : Window, IDisposable
 
         ImGui.Separator();
 
-        float trailMarkerSize = config.TrailMarkerSize;
-        if (ImGui.SliderFloat("Trail marker size", ref trailMarkerSize, 4.0f, 16.0f))
+        ImGui.Separator();
+        ImGui.Text("Trail Appearance");
+
+        float trailMarkerSize = Plugin.Instance.Configuration.TrailMarkerSize;
+
+        if (ImGui.SliderFloat("Trail Dot Size", ref trailMarkerSize, 3.0f, 16.0f))
         {
-            config.TrailMarkerSize = trailMarkerSize;
-            config.Save();
+            Plugin.Instance.Configuration.TrailMarkerSize = trailMarkerSize;
+            Plugin.Instance.Configuration.Save();
+        }
+
+        float trailMarkerSpacing = Plugin.Instance.Configuration.TrailMarkerSpacing;
+
+        if (ImGui.SliderFloat("Distance Between Trail Dots", ref trailMarkerSpacing, 2.0f, 30.0f))
+        {
+            Plugin.Instance.Configuration.TrailMarkerSpacing = trailMarkerSpacing;
+            Plugin.Instance.Configuration.Save();
+        }
+
+        Vector4 trailGraphPointColor = Plugin.Instance.Configuration.TrailGraphPointColor;
+
+        if (ImGui.ColorEdit4("Trail Color", ref trailGraphPointColor))
+        {
+            Plugin.Instance.Configuration.TrailGraphPointColor = trailGraphPointColor;
+            Plugin.Instance.Configuration.Save();
+        }
+
+        Vector4 trailInterpolatedPointColor = Plugin.Instance.Configuration.TrailInterpolatedPointColor;
+
+        if (ImGui.ColorEdit4("Trail Smoothing Color", ref trailInterpolatedPointColor))
+        {
+            Plugin.Instance.Configuration.TrailInterpolatedPointColor = trailInterpolatedPointColor;
+            Plugin.Instance.Configuration.Save();
+        }
+
+        if (ImGui.Button("Reset Trail Appearance"))
+        {
+            Plugin.Instance.Configuration.TrailMarkerSize = 9.0f;
+            Plugin.Instance.Configuration.TrailMarkerSpacing = 3.5f;
+            Plugin.Instance.Configuration.TrailGraphPointColor = new Vector4(0.3f, 0.9f, 1.0f, 1.0f);
+            Plugin.Instance.Configuration.TrailInterpolatedPointColor = new Vector4(0.15f, 0.35f, 1.0f, 1.0f);
+            Plugin.Instance.Configuration.Save();
         }
 
         float graphDebugDrawDistance = config.GraphDebugDrawDistance;

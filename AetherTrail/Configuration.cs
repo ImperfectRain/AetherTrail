@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Dalamud.Configuration;
 using Dalamud.Plugin;
 
@@ -20,12 +21,18 @@ public class Configuration : IPluginConfiguration
 
     public bool RecordingEnabledByDefault { get; set; } = true;
     public bool OverlayEnabled { get; set; } = true;
+    public bool HideTrailBehindUi { get; set; } = true;
 
     public float NodeSpacing { get; set; } = 7.0f;
     public float CornerNodeSpacing { get; set; } = 3.0f;
     public float DirectionChangeThreshold { get; set; } = 0.35f;
     public float TeleportResetDistance { get; set; } = 40.0f;
     public float SessionAttachDistance { get; set; } = 25.0f;
+
+    public float TrailMarkerSpacing { get; set; } = 3.5f;
+
+    public Vector4 TrailGraphPointColor { get; set; } = new(0.3f, 0.9f, 1.0f, 1.0f);
+    public Vector4 TrailInterpolatedPointColor { get; set; } = new(0.15f, 0.35f, 1.0f, 1.0f);
 
     public float TrailMarkerSize { get; set; } = 9.0f;
     public float GraphDebugDrawDistance { get; set; } = 80.0f;

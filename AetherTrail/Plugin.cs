@@ -39,6 +39,8 @@ public sealed class Plugin : IDalamudPlugin
     private const string ImportCommandName = "/atrailimport";
     private const string PruneCommandName = "/atrailprune";
     private const string CleanFlightCommandName = "/atrailcleanflight";
+    private const string SplitCrossingsCommandName = "/atrailsplitcrossings";
+    private const string CleanRedundantLinksCommandName = "/atrailcleanlinks";
     private const string QuestDebugCommandName = "/atrailquestdebug";
     private const string SyncExportCommandName = "/atrailsyncexport";
     private const string SyncImportCommandName = "/atrailsyncimport";
@@ -140,6 +142,14 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Clean up the current territory's AetherTrail graph."
         });
+        CommandManager.AddHandler(SplitCrossingsCommandName, new CommandInfo(OnSplitCrossingsCommand)
+        {
+            HelpMessage = "Split existing crossing ground links in the current AetherTrail graph."
+        });
+        CommandManager.AddHandler(CleanRedundantLinksCommandName, new CommandInfo(OnCleanRedundantLinksCommand)
+        {
+            HelpMessage = "Remove redundant overlapping AetherTrail graph links in the current territory."
+        });
         CommandManager.AddHandler(CleanFlightCommandName, new CommandInfo(OnCleanFlightCommand)
         {
             HelpMessage = "Remove flight-mode nodes from the current AetherTrail graph."
@@ -212,6 +222,8 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(SyncPreviewCommandName);
         CommandManager.RemoveHandler(CleanFlightCommandName);
         CommandManager.RemoveHandler(MapCommandName);
+        CommandManager.RemoveHandler(SplitCrossingsCommandName);
+        CommandManager.RemoveHandler(CleanRedundantLinksCommandName);
         //trying to clean up implementation
         CommandManager.RemoveHandler("/atrailresetconfidence");
 
@@ -283,6 +295,9 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUI()
     {
+        NativeUiOcclusionService.BeginFrame();
+        UiOcclusionService.BeginFrame();
+        GraphMutationQueue.Process();
         GraphMutationQueue.Process();
 
         WindowSystem.Draw();
@@ -383,6 +398,36 @@ public sealed class Plugin : IDalamudPlugin
     private void OnPruneCommand(string command, string args)
     {
         PruneCurrentTerritoryGraph();
+    }
+
+    private void OnSplitCrossingsCommand(string command, string args)
+    {
+        uint territoryId = ClientState.TerritoryType;
+
+        ChatGui.Print($"[AetherTrail] Splitting crossing links for territory {territoryId}...");
+
+        int splitCount = NavigationManager.SplitCrossingLinks(territoryId);
+
+        ChatGui.Print(
+            splitCount == 0
+                ? "[AetherTrail] No crossing ground links found."
+                : $"[AetherTrail] Split {splitCount} crossing ground link(s)."
+        );
+    }
+
+    private void OnCleanRedundantLinksCommand(string command, string args)
+    {
+        uint territoryId = Plugin.ClientState.TerritoryType;
+
+        Plugin.ChatGui.Print($"[AetherTrail] Cleaning redundant links for territory {territoryId}...");
+
+        int removed = NavigationManager.RemoveRedundantLinks(territoryId);
+
+        Plugin.ChatGui.Print(
+            removed == 0
+                ? "[AetherTrail] No redundant links found."
+                : $"[AetherTrail] Removed {removed} redundant link(s)."
+        );
     }
 
     private void OnCleanFlightCommand(string command, string args)

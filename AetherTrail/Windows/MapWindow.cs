@@ -4,6 +4,7 @@ using Dalamud.Interface.Windowing;
 using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using Lumina.Data.Files;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
@@ -21,7 +22,7 @@ public sealed class MapWindow : Window, IDisposable
     private bool showLinks = true;
     private bool showNodes = true;
     private bool showActiveRoute = true;
-    private bool heatmapMode;
+    private MapDisplayMode displayMode = MapDisplayMode.Normal;
 
     private IDalamudTextureWrap? mapTexture;
     private uint loadedMapTerritoryId;
@@ -46,6 +47,13 @@ public sealed class MapWindow : Window, IDisposable
 
     public override void Draw()
     {
+        UiOcclusionService.AddRect(
+            ImGui.GetWindowPos(),
+            ImGui.GetWindowPos() + ImGui.GetWindowSize()
+        );
+
+        // existing draw code...
+    
         uint territoryId = Plugin.ClientState.TerritoryType;
         var graph = NavigationManager.GetGraph(territoryId);
 
@@ -63,7 +71,18 @@ public sealed class MapWindow : Window, IDisposable
         ImGui.SameLine();
         ImGui.Checkbox("Route", ref this.showActiveRoute);
         ImGui.SameLine();
-        ImGui.Checkbox("Heatmap", ref this.heatmapMode);
+        ImGui.Text("Display");
+        ImGui.SameLine();
+
+        int displayModeValue = (int)this.displayMode;
+
+        if (ImGui.Combo(
+                "##MapDisplayMode",
+                ref displayModeValue,
+                "Normal\0Confidence\0Density\0"))
+        {
+            this.displayMode = (MapDisplayMode)displayModeValue;
+        }
 
         if (ImGui.Button("Reset View"))
         {
@@ -133,7 +152,20 @@ public sealed class MapWindow : Window, IDisposable
     Vector2 canvasPos,
     Vector2 canvasSize)
     {
-        var nodesById = visibleNodes.ToDictionary(node => node.Id);
+        var nodesById = new Dictionary<string, NavNodeSnapshot>();
+
+        foreach (var node in visibleNodes)
+        {
+            if (string.IsNullOrWhiteSpace(node.Id))
+                continue;
+
+            if (!nodesById.ContainsKey(node.Id))
+                nodesById[node.Id] = node;
+        }
+
+        Dictionary<string, int> densityByNodeId = this.displayMode == MapDisplayMode.Density
+            ? BuildDensityLookup(visibleNodes, 18.0f)
+            : new Dictionary<string, int>();
 
         if (this.showLinks)
         {
@@ -158,15 +190,35 @@ public sealed class MapWindow : Window, IDisposable
                         ? value
                         : 1;
 
-                    uint linkColor = this.heatmapMode
-                        ? GetHeatmapColor(confidence, 0.65f)
-                        : node.TraversalMode == NavTraversalMode.Flight
-                            ? GetFlightColor(0.45f)
-                            : GetConfidenceColor(confidence, 0.45f);
+                    uint linkColor;
+                    float thickness;
 
-                    float thickness = this.heatmapMode
-                        ? Math.Clamp(1.0f + confidence * 0.12f, 1.0f, 4.0f)
-                        : 1.5f;
+                    switch (this.displayMode)
+                    {
+                        case MapDisplayMode.Confidence:
+                            linkColor = GetConfidenceColor(confidence, 0.65f);
+                            thickness = Math.Clamp(1.0f + confidence / 35.0f, 1.0f, 4.0f);
+                            break;
+
+                        case MapDisplayMode.Density:
+                            {
+                                int aDensity = densityByNodeId.TryGetValue(node.Id, out int aValue) ? aValue : 0;
+                                int bDensity = densityByNodeId.TryGetValue(linked.Id, out int bValue) ? bValue : 0;
+                                int density = Math.Max(aDensity, bDensity);
+
+                                linkColor = GetDensityColor(density, 0.65f);
+                                thickness = Math.Clamp(1.0f + density / 8.0f, 1.0f, 4.5f);
+                                break;
+                            }
+
+                        default:
+                            linkColor = node.TraversalMode == NavTraversalMode.Flight
+                                ? GetFlightColor(0.45f)
+                                : GetConfidenceColor(confidence, 0.45f);
+
+                            thickness = 1.5f;
+                            break;
+                    }
 
                     drawList.AddLine(a, b, linkColor, thickness);
                 }
@@ -185,11 +237,27 @@ public sealed class MapWindow : Window, IDisposable
 
             int nodeConfidence = NavConfidence.GetMedianConfidence(node);
 
-            uint nodeColor = this.heatmapMode
-                ? GetHeatmapColor(nodeConfidence, 0.95f)
-                : node.TraversalMode == NavTraversalMode.Flight
-                ? GetFlightColor(0.9f)
-                : GetConfidenceColor(nodeConfidence, 0.9f);
+            uint nodeColor;
+
+            switch (this.displayMode)
+            {
+                case MapDisplayMode.Confidence:
+                    nodeColor = GetConfidenceColor(nodeConfidence, 0.95f);
+                    break;
+
+                case MapDisplayMode.Density:
+                    {
+                        int density = densityByNodeId.TryGetValue(node.Id, out int value) ? value : 0;
+                        nodeColor = GetDensityColor(density, 0.95f);
+                        break;
+                    }
+
+                default:
+                    nodeColor = node.TraversalMode == NavTraversalMode.Flight
+                        ? GetFlightColor(0.9f)
+                        : GetConfidenceColor(nodeConfidence, 0.9f);
+                    break;
+            }
 
             float radius = node.TraversalMode == NavTraversalMode.Flight
                 ? 3.5f
@@ -316,6 +384,38 @@ public sealed class MapWindow : Window, IDisposable
         };
     }
 
+    private static Dictionary<string, int> BuildDensityLookup(
+    List<NavNodeSnapshot> nodes,
+    float radius)
+    {
+        Dictionary<string, int> densityByNodeId = new();
+
+        float radiusSq = radius * radius;
+
+        foreach (var node in nodes)
+        {
+            int count = 0;
+
+            foreach (var other in nodes)
+            {
+                if (node.Id == other.Id)
+                    continue;
+
+                if (node.TraversalMode != other.TraversalMode)
+                    continue;
+
+                float distanceSq = Vector3.DistanceSquared(node.Position, other.Position);
+
+                if (distanceSq <= radiusSq)
+                    count++;
+            }
+
+            densityByNodeId[node.Id] = count;
+        }
+
+        return densityByNodeId;
+    }
+
     private static uint GetHeatmapColor(int confidence, float alpha)
     {
         confidence = Math.Clamp(confidence, 1, 20);
@@ -407,6 +507,48 @@ public sealed class MapWindow : Window, IDisposable
     {
         t = Math.Clamp(t, 0f, 1f);
         return a + ((b - a) * t);
+    }
+
+    private static uint GetDensityColor(int density, float alpha)
+    {
+        density = Math.Clamp(density, 0, 30);
+
+        float t = density / 30f;
+
+        Vector4 color;
+
+        if (t < 0.33f)
+        {
+            float local = t / 0.33f;
+
+            color = Lerp(
+                new Vector4(0.1f, 0.35f, 1.0f, alpha),   // blue
+                new Vector4(0.1f, 1.0f, 0.35f, alpha),   // green
+                local
+            );
+        }
+        else if (t < 0.66f)
+        {
+            float local = (t - 0.33f) / 0.33f;
+
+            color = Lerp(
+                new Vector4(0.1f, 1.0f, 0.35f, alpha),   // green
+                new Vector4(1.0f, 1.0f, 0.0f, alpha),    // yellow
+                local
+            );
+        }
+        else
+        {
+            float local = (t - 0.66f) / 0.34f;
+
+            color = Lerp(
+                new Vector4(1.0f, 1.0f, 0.0f, alpha),    // yellow
+                new Vector4(1.0f, 0.1f, 0.0f, alpha),    // red
+                local
+            );
+        }
+
+        return ImGui.ColorConvertFloat4ToU32(color);
     }
 
     private static uint GetFlightColor(float alpha)

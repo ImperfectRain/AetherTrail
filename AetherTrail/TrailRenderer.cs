@@ -35,7 +35,7 @@ public class TrailRenderer
 
     private const float HidePassedDistance = 2.5f;
     private const int MaxRenderedTrailPoints = 140;
-    private const float MinimumRenderedPointSpacing = 3.5f;
+    
 
     public void SetPath(TrailPath path)
     {
@@ -108,7 +108,13 @@ public class TrailRenderer
         var playerPos = player.Position;
 
         var displayPath = GetDisplayPath();
-        var renderedPath = ThinDisplayPath(displayPath, MaxRenderedTrailPoints, MinimumRenderedPointSpacing);
+        float markerSpacing = Math.Clamp(
+        Plugin.Instance.Configuration.TrailMarkerSpacing,
+            1.0f,
+            15.0f
+        );
+
+        var renderedPath = ThinDisplayPath(displayPath, MaxRenderedTrailPoints, markerSpacing);
 
         for (int i = 0; i < renderedPath.Count; i++)
         {
@@ -120,13 +126,31 @@ public class TrailRenderer
 
             if (Plugin.GameGui.WorldToScreen(worldPos, out Vector2 screenPos))
             {
+                if (Plugin.Instance.Configuration.HideTrailBehindUi &&
+                    (NativeUiOcclusionService.Contains(screenPos) ||
+                     UiOcclusionService.Contains(screenPos)))
+                {
+                    continue;
+                }
+
                 float alpha = Math.Clamp(1.0f - i * 0.018f, 0.15f, 1.0f);
                 float baseSize = Plugin.Instance.Configuration.TrailMarkerSize;
-                float radius = Math.Clamp(baseSize - i * 0.04f, 5f, baseSize);
+                float radius = Math.Clamp(baseSize - i * 0.04f, 3.5f, baseSize);
 
-                Vector4 markerColor = point.IsGraphPoint
-                    ? new Vector4(0.3f, 0.9f, 1.0f, alpha)
-                    : new Vector4(0.15f, 0.35f, 1.0f, alpha * 0.55f);
+                Vector4 configuredColor = point.IsGraphPoint
+                    ? Plugin.Instance.Configuration.TrailGraphPointColor
+                    : Plugin.Instance.Configuration.TrailInterpolatedPointColor;
+
+                float finalAlpha = point.IsGraphPoint
+                    ? alpha
+                    : alpha * 0.55f;
+
+                Vector4 markerColor = new(
+                    configuredColor.X,
+                    configuredColor.Y,
+                    configuredColor.Z,
+                    finalAlpha
+                );
 
                 uint color = ImGui.ColorConvertFloat4ToU32(markerColor);
 
@@ -143,32 +167,64 @@ public class TrailRenderer
     private static List<TrailPoint> ThinDisplayPath(
     List<TrailPoint> path,
     int maxPoints,
-    float minimumSpacing)
+    float spacing)
     {
-        if (path.Count <= maxPoints)
-            return path;
+        if (path.Count == 0)
+            return new List<TrailPoint>();
+
+        if (path.Count == 1)
+            return new List<TrailPoint> { path[0] };
+
+        spacing = Math.Clamp(spacing, 0.75f, 30.0f);
 
         List<TrailPoint> result = new();
 
-        Vector3? lastAddedPosition = null;
+        result.Add(path[0]);
 
-        foreach (var point in path)
+        float distanceSinceLastDot = 0f;
+
+        for (int i = 0; i < path.Count - 1; i++)
         {
-            if (lastAddedPosition.HasValue &&
-                Vector3.Distance(lastAddedPosition.Value, point.Position) < minimumSpacing)
-            {
+            TrailPoint a = path[i];
+            TrailPoint b = path[i + 1];
+
+            Vector3 segment = b.Position - a.Position;
+            float segmentLength = segment.Length();
+
+            if (segmentLength < 0.001f)
                 continue;
+
+            Vector3 direction = segment / segmentLength;
+
+            float distanceAlongSegment = spacing - distanceSinceLastDot;
+
+            while (distanceAlongSegment <= segmentLength)
+            {
+                Vector3 position = a.Position + direction * distanceAlongSegment;
+
+                result.Add(new TrailPoint
+                {
+                    Position = position,
+                    IsGraphPoint = a.IsGraphPoint && b.IsGraphPoint
+                });
+
+                if (result.Count >= maxPoints)
+                    return result;
+
+                distanceAlongSegment += spacing;
             }
 
-            result.Add(point);
-            lastAddedPosition = point.Position;
+            distanceSinceLastDot = segmentLength - (distanceAlongSegment - spacing);
 
-            if (result.Count >= maxPoints)
-                break;
+            if (distanceSinceLastDot < 0f)
+                distanceSinceLastDot = 0f;
         }
 
-        if (result.Count == 0 || result[^1].Position != path[^1].Position)
+        if (result.Count < maxPoints &&
+            Vector3.DistanceSquared(result[^1].Position, path[^1].Position) > spacing * spacing * 0.35f)
+        {
             result.Add(path[^1]);
+        }
 
         return result;
     }
