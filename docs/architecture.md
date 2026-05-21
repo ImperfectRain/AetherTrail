@@ -43,4 +43,4 @@ Dalamud window classes live in `Windows`. Window code should stay focused on pre
 - `NavigationManager.ImportExport.cs` imports, exports, validates, bounds-checks, and merges graph files.
 - `NavigationManager.SyncPackets.cs` creates, previews, imports, and exports sync packets.
 
-The next cleanup target will be replacing the static facade with injectable services once tests exist for graph merge, pruning, recording, and path construction.
+The next cleanup target should be replacing the static facade with injectable services once tests exist for graph merge, pruning, recording, and path construction.
