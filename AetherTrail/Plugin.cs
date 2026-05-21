@@ -5,9 +5,12 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using System;
+using System.Threading.Tasks;
 using System.IO;
 using System.Numerics;
 using System.Collections.Generic;
+
+
 
 namespace AetherTrail;
 
@@ -46,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     private const string SyncImportCommandName = "/atrailsyncimport";
     private const string SyncPreviewCommandName = "/atrailsyncpreview";
     private const string MapCommandName = "/atrailmap";
+    private const string ToolsCommandName = "/atrailtools";
 
     private bool trailEnabled;
     private bool recordingEnabled;
@@ -71,6 +75,7 @@ public sealed class Plugin : IDalamudPlugin
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
     private MapWindow MapWindow { get; init; }
+    private readonly ToolsWindow toolsWindow;
 
     public TrailRenderer TrailRenderer => this.trailRenderer;
 
@@ -96,10 +101,13 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow = new ConfigWindow(this);
         MainWindow = new MainWindow(this, goatImagePath);
         MapWindow = new MapWindow(this);
+        this.toolsWindow = new ToolsWindow(this);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(MapWindow);
+        this.WindowSystem.AddWindow(this.toolsWindow);
+
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
@@ -179,6 +187,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Open the AetherTrail graph map."
         });
+        CommandManager.AddHandler(ToolsCommandName, new CommandInfo(OnToolsCommand)
+        {
+            HelpMessage = "Open the AetherTrail tools window."
+        });
 
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -200,6 +212,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
 
         WindowSystem.RemoveAllWindows();
+        this.WindowSystem.RemoveWindow(this.toolsWindow);
 
         ConfigWindow.Dispose();
         MainWindow.Dispose();
@@ -224,6 +237,7 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(MapCommandName);
         CommandManager.RemoveHandler(SplitCrossingsCommandName);
         CommandManager.RemoveHandler(CleanRedundantLinksCommandName);
+        CommandManager.RemoveHandler(ToolsCommandName);
         //trying to clean up implementation
         CommandManager.RemoveHandler("/atrailresetconfidence");
 
@@ -510,6 +524,11 @@ public sealed class Plugin : IDalamudPlugin
         MapWindow.Toggle();
     }
 
+    private void OnToolsCommand(string command, string args)
+    {
+        this.toolsWindow.Toggle();
+    }
+
     private void PrintTypeMembers(Type type)
     {
         ChatGui.Print($"--- {type.Name} ---");
@@ -596,6 +615,40 @@ public sealed class Plugin : IDalamudPlugin
             $"Remaining: {result.RemainingNodes} nodes, {result.RemainingLinks} links."
         );
     }
+
+    public void QueueManualPartySync()
+    {
+        if (!this.Configuration.PartySyncEnabled)
+        {
+            ChatGui.Print("[AetherTrail] Party sync is disabled.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(this.Configuration.SyncRoomCode))
+        {
+            ChatGui.Print("[AetherTrail] No party sync room code set.");
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await this.partySyncService.SyncCurrentTerritory();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Manual AetherTrail party sync failed.");
+                ChatGui.Print($"[AetherTrail] Manual sync failed: {ex.Message}");
+            }
+        });
+    }
+
+    public void ToggleToolsWindow()
+    {
+        this.toolsWindow.Toggle();
+    }
     public void ToggleConfigUi() => ConfigWindow.Toggle();
     public void ToggleMainUi() => MainWindow.Toggle();
 }
+

@@ -54,6 +54,11 @@ public class MainWindow : Window, IDisposable
             plugin.ImportCurrentTerritoryGraph();
         }
 
+        if (ImGui.Button("Tools"))
+        {
+            this.plugin.ToggleToolsWindow();
+        }
+
         ImGui.Separator();
         ImGui.Text("Party Sync");
 

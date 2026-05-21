@@ -17,6 +17,11 @@ public class Configuration : IPluginConfiguration
     public bool PartySyncEnabled { get; set; } = false;
     public bool AutoSyncEnabled { get; set; } = true;
     public int SyncIntervalSeconds { get; set; } = 15;
+    public int GraphSyncIntervalSeconds { get; set; } = 90;
+    public int PresenceMovingSyncIntervalSeconds { get; set; } = 5;
+    public int PresenceIdleSyncIntervalSeconds { get; set; } = 15;
+    public float PresenceMovementThreshold { get; set; } = 1.5f;
+    public float PresenceRotationThresholdRadians { get; set; } = 0.5f;
     public int Version { get; set; } = 1;
 
     public bool RecordingEnabledByDefault { get; set; } = true;

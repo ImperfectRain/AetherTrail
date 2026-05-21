@@ -53,53 +53,127 @@ public sealed class PartyPresenceWorldRenderer
         float ageSeconds = (float)(DateTime.UtcNow - presence.UpdatedAtUtc).TotalSeconds;
         float alpha = Math.Clamp(1f - (ageSeconds / 45f), 0.25f, 1f);
 
-        Vector2 screenForward = GetScreenForward(position, presence.RotationRadians, screenCenter);
+        DrawWireframeBeacon(
+            drawList,
+            position,
+            presence.RotationRadians,
+            alpha
+        );
 
-        DrawArrow(drawList, screenCenter, screenForward, alpha);
-        DrawLabel(drawList, screenCenter + new Vector2(16f, -26f), presence.DisplayName, ageSeconds, alpha);
+        DrawLabel(
+            drawList,
+            screenCenter + new Vector2(16f, -26f),
+            presence.DisplayName,
+            ageSeconds,
+            alpha
+        );
     }
 
-    private static Vector2 GetScreenForward(Vector3 position, float rotationRadians, Vector2 screenCenter)
+    private static void DrawWireframeBeacon(
+        ImDrawListPtr drawList,
+        Vector3 basePosition,
+        float rotationRadians,
+        float alpha)
     {
-        Vector3 worldForward = new(
+        Vector3 center = basePosition + new Vector3(0f, 2.15f, 0f);
+
+        float height = 1.15f;
+        float radius = 0.55f;
+
+        float pulse = 1.0f + MathF.Sin((float)DateTime.UtcNow.TimeOfDay.TotalSeconds * 4.0f) * 0.08f;
+
+        height *= pulse;
+        radius *= pulse;
+
+        Vector3 top = center + new Vector3(0f, height, 0f);
+        Vector3 bottom = center - new Vector3(0f, height * 0.65f, 0f);
+
+        Vector3 forward = new(
             MathF.Sin(rotationRadians),
             0f,
             MathF.Cos(rotationRadians)
         );
 
-        Vector3 forwardWorld = position + worldForward * 1.75f + new Vector3(0f, 2.35f, 0f);
+        if (forward.LengthSquared() < 0.001f)
+            forward = Vector3.UnitZ;
 
-        if (!Plugin.GameGui.WorldToScreen(forwardWorld, out Vector2 forwardScreen))
-            return new Vector2(0f, -1f);
+        forward = Vector3.Normalize(forward);
 
-        Vector2 direction = forwardScreen - screenCenter;
+        Vector3 right = new(forward.Z, 0f, -forward.X);
 
-        if (direction.LengthSquared() < 0.001f)
-            return new Vector2(0f, -1f);
+        Vector3 front = center + forward * radius;
+        Vector3 back = center - forward * radius;
+        Vector3 left = center - right * radius;
+        Vector3 rightPoint = center + right * radius;
 
-        return Vector2.Normalize(direction);
+        uint mainColor = ImGui.ColorConvertFloat4ToU32(
+            new Vector4(1.0f, 0.1f, 0.85f, 0.95f * alpha)
+        );
+
+        uint shadowColor = ImGui.ColorConvertFloat4ToU32(
+            new Vector4(0f, 0f, 0f, 0.75f * alpha)
+        );
+
+        const float shadowThickness = 3.5f;
+        const float lineThickness = 1.8f;
+
+        DrawBeaconEdges(drawList, top, bottom, front, rightPoint, back, left, shadowColor, shadowThickness);
+        DrawBeaconEdges(drawList, top, bottom, front, rightPoint, back, left, mainColor, lineThickness);
+
+        Vector3 nose = center + forward * (radius * 1.65f);
+
+        DrawWorldLine(drawList, front, nose, shadowColor, shadowThickness);
+        DrawWorldLine(drawList, front, nose, mainColor, lineThickness);
     }
 
-    private static void DrawArrow(
+    private static void DrawBeaconEdges(
         ImDrawListPtr drawList,
-        Vector2 center,
-        Vector2 forward,
-        float alpha)
+        Vector3 top,
+        Vector3 bottom,
+        Vector3 front,
+        Vector3 rightPoint,
+        Vector3 back,
+        Vector3 left,
+        uint color,
+        float thickness)
     {
-        float size = 18f;
+        DrawWorldLine(drawList, top, front, color, thickness);
+        DrawWorldLine(drawList, top, rightPoint, color, thickness);
+        DrawWorldLine(drawList, top, back, color, thickness);
+        DrawWorldLine(drawList, top, left, color, thickness);
 
-        Vector2 right = new(forward.Y, -forward.X);
+        DrawWorldLine(drawList, bottom, front, color, thickness);
+        DrawWorldLine(drawList, bottom, rightPoint, color, thickness);
+        DrawWorldLine(drawList, bottom, back, color, thickness);
+        DrawWorldLine(drawList, bottom, left, color, thickness);
 
-        Vector2 tip = center + forward * size;
-        Vector2 left = center - forward * (size * 0.7f) - right * (size * 0.6f);
-        Vector2 rightPoint = center - forward * (size * 0.7f) + right * (size * 0.6f);
+        DrawWorldLine(drawList, front, rightPoint, color, thickness);
+        DrawWorldLine(drawList, rightPoint, back, color, thickness);
+        DrawWorldLine(drawList, back, left, color, thickness);
+        DrawWorldLine(drawList, left, front, color, thickness);
+    }
 
-        uint outlineColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.9f * alpha));
-        uint fillColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1.0f, 0.1f, 0.85f, 0.95f * alpha));
+    private static void DrawWorldLine(
+        ImDrawListPtr drawList,
+        Vector3 worldA,
+        Vector3 worldB,
+        uint color,
+        float thickness)
+    {
+        if (!Plugin.GameGui.WorldToScreen(worldA, out Vector2 screenA))
+            return;
 
-        drawList.AddTriangleFilled(tip, left, rightPoint, fillColor);
-        drawList.AddTriangle(tip, left, rightPoint, outlineColor, 2.5f);
-        drawList.AddCircleFilled(center, 3.5f, outlineColor);
+        if (!Plugin.GameGui.WorldToScreen(worldB, out Vector2 screenB))
+            return;
+
+        if (Plugin.Instance.Configuration.HideTrailBehindUi &&
+            (NativeUiOcclusionService.Contains(screenA) ||
+             NativeUiOcclusionService.Contains(screenB)))
+        {
+            return;
+        }
+
+        drawList.AddLine(screenA, screenB, color, thickness);
     }
 
     private static void DrawLabel(
