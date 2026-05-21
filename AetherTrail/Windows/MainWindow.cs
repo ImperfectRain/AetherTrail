@@ -58,6 +58,10 @@ public class MainWindow : Window, IDisposable
         {
             this.plugin.ToggleToolsWindow();
         }
+        if (ImGui.Button("Chat"))
+        {
+            this.plugin.ToggleChatWindow();
+        }
 
         ImGui.Separator();
         ImGui.Text("Party Sync");

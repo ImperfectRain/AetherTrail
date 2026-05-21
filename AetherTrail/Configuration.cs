@@ -24,6 +24,11 @@ public class Configuration : IPluginConfiguration
     public float PresenceRotationThresholdRadians { get; set; } = 0.5f;
     public int Version { get; set; } = 1;
 
+    public bool ChatEnabled { get; set; } = true;
+    public int ChatPollIntervalSeconds { get; set; } = 3;
+    public int ChatLocalMaxCharacters { get; set; } = 20000;
+    public int ChatMessageMaxCharacters { get; set; } = 500;
+
     public bool RecordingEnabledByDefault { get; set; } = true;
     public bool OverlayEnabled { get; set; } = true;
     public bool HideTrailBehindUi { get; set; } = true;

@@ -1,4 +1,5 @@
 using AetherTrail.Windows;
+using AetherTrail.Chat;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -17,6 +18,10 @@ namespace AetherTrail;
 public sealed class Plugin : IDalamudPlugin
 
 {
+    public void ToggleChatWindow()
+    {
+        this.chatWindow.Toggle();
+    }
     public static Plugin Instance { get; private set; } = null!;
 
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
@@ -50,6 +55,7 @@ public sealed class Plugin : IDalamudPlugin
     private const string SyncPreviewCommandName = "/atrailsyncpreview";
     private const string MapCommandName = "/atrailmap";
     private const string ToolsCommandName = "/atrailtools";
+    private const string ChatCommandName = "/atrailchat";
 
     private bool trailEnabled;
     private bool recordingEnabled;
@@ -76,6 +82,9 @@ public sealed class Plugin : IDalamudPlugin
     private MainWindow MainWindow { get; init; }
     private MapWindow MapWindow { get; init; }
     private readonly ToolsWindow toolsWindow;
+    public ChatService ChatService { get; }
+
+    private readonly ChatWindow chatWindow;
 
     public TrailRenderer TrailRenderer => this.trailRenderer;
 
@@ -102,11 +111,16 @@ public sealed class Plugin : IDalamudPlugin
         MainWindow = new MainWindow(this, goatImagePath);
         MapWindow = new MapWindow(this);
         this.toolsWindow = new ToolsWindow(this);
+        this.ChatService = new ChatService();
+
+        this.chatWindow = new ChatWindow(this);
+        this.WindowSystem.AddWindow(this.chatWindow);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(MapWindow);
         this.WindowSystem.AddWindow(this.toolsWindow);
+
 
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -191,6 +205,10 @@ public sealed class Plugin : IDalamudPlugin
         {
             HelpMessage = "Open the AetherTrail tools window."
         });
+        CommandManager.AddHandler(ChatCommandName, new CommandInfo(OnChatCommand)
+        {
+            HelpMessage = "Open the AetherTrail chat window."
+        });
 
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -217,6 +235,8 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         MainWindow.Dispose();
         MapWindow.Dispose();
+        this.chatWindow.Dispose();
+        this.WindowSystem.RemoveWindow(this.chatWindow);
 
 
         CommandManager.RemoveHandler(CommandName);
@@ -238,6 +258,7 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(SplitCrossingsCommandName);
         CommandManager.RemoveHandler(CleanRedundantLinksCommandName);
         CommandManager.RemoveHandler(ToolsCommandName);
+        CommandManager.RemoveHandler(ChatCommandName);
         //trying to clean up implementation
         CommandManager.RemoveHandler("/atrailresetconfidence");
 
@@ -330,6 +351,7 @@ public sealed class Plugin : IDalamudPlugin
         );
 
         partySyncService.Update();
+        this.ChatService.Update();
         NavigationManager.FlushDirtyGraphs();
     }
 
@@ -527,6 +549,11 @@ public sealed class Plugin : IDalamudPlugin
     private void OnToolsCommand(string command, string args)
     {
         this.toolsWindow.Toggle();
+    }
+
+    private void OnChatCommand(string command, string args)
+    {
+        this.chatWindow.Toggle();
     }
 
     private void PrintTypeMembers(Type type)
