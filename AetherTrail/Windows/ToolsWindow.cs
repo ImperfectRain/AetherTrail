@@ -51,51 +51,96 @@ public sealed class ToolsWindow : Window
 
     private void DrawSyncSection()
     {
-        if (ImGui.CollapsingHeader("Party Sync", ImGuiTreeNodeFlags.DefaultOpen))
+        if (ImGui.CollapsingHeader("Network Sync", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            bool partySyncEnabled = this.plugin.Configuration.PartySyncEnabled;
+            var config = this.plugin.Configuration;
+            bool graphSyncEnabled = config.PartySyncEnabled;
 
-            if (ImGui.Checkbox("Party Sync Enabled", ref partySyncEnabled))
+            if (ImGui.Checkbox("Graph Sync Enabled", ref graphSyncEnabled))
             {
-                this.plugin.Configuration.PartySyncEnabled = partySyncEnabled;
-                this.plugin.Configuration.Save();
+                if (graphSyncEnabled)
+                {
+                    this.plugin.RequestNetworkFeatureEnable(() =>
+                    {
+                        config.PartySyncEnabled = true;
+                        config.Save();
+                    });
+                }
+                else
+                {
+                    config.PartySyncEnabled = false;
+                    config.Save();
+                }
             }
 
-            bool autoSyncEnabled = this.plugin.Configuration.AutoSyncEnabled;
+            bool presenceSyncEnabled = config.PartyPresenceSyncEnabled;
+
+            if (ImGui.Checkbox("Share Party Position", ref presenceSyncEnabled))
+            {
+                if (presenceSyncEnabled)
+                {
+                    this.plugin.RequestNetworkFeatureEnable(() =>
+                    {
+                        config.PartyPresenceSyncEnabled = true;
+                        config.PartyPresenceMarkersEnabled = true;
+                        config.Save();
+                    });
+                }
+                else
+                {
+                    config.PartyPresenceSyncEnabled = false;
+                    config.Save();
+                    PartyPresenceService.Clear();
+                }
+            }
+
+            bool autoSyncEnabled = config.AutoSyncEnabled;
 
             if (ImGui.Checkbox("Auto Sync Enabled", ref autoSyncEnabled))
             {
-                this.plugin.Configuration.AutoSyncEnabled = autoSyncEnabled;
-                this.plugin.Configuration.Save();
+                if (autoSyncEnabled)
+                {
+                    this.plugin.RequestNetworkFeatureEnable(() =>
+                    {
+                        config.AutoSyncEnabled = true;
+                        config.Save();
+                    });
+                }
+                else
+                {
+                    config.AutoSyncEnabled = false;
+                    config.Save();
+                }
             }
 
-            string roomCode = this.plugin.Configuration.SyncRoomCode;
+            string roomCode = config.SyncRoomCode;
 
             if (ImGui.InputText("Room Code", ref roomCode, 32))
             {
-                this.plugin.Configuration.SyncRoomCode = roomCode.Trim().ToUpperInvariant();
-                this.plugin.Configuration.Save();
+                config.SyncRoomCode = roomCode.Trim().ToUpperInvariant();
+                config.Save();
             }
 
             if (ImGui.Button("Generate New Room Code"))
             {
-                this.plugin.Configuration.SyncRoomCode = PartySyncService.GenerateRoomCode();
-                this.plugin.Configuration.Save();
+                config.SyncRoomCode = PartySyncService.GenerateRoomCode();
+                config.Save();
 
-                Plugin.ChatGui.Print($"AetherTrail party sync room created: {this.plugin.Configuration.SyncRoomCode}");
+                Plugin.ChatGui.Print($"AetherTrail sync room created: {config.SyncRoomCode}");
             }
 
             ImGui.SameLine();
 
             if (ImGui.Button("Leave Room"))
             {
-                this.plugin.Configuration.SyncRoomCode = "";
-                this.plugin.Configuration.PartySyncEnabled = false;
-                this.plugin.Configuration.Save();
+                config.SyncRoomCode = "";
+                config.PartySyncEnabled = false;
+                config.PartyPresenceSyncEnabled = false;
+                config.Save();
 
                 PartyPresenceService.Clear();
 
-                Plugin.ChatGui.Print("AetherTrail left party sync room.");
+                Plugin.ChatGui.Print("AetherTrail left sync room.");
             }
 
             if (ImGui.Button("Sync Current Territory Now"))

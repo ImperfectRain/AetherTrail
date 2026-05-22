@@ -191,14 +191,20 @@ public static class NavPathfinder
 
         confidence = NavConfidence.Clamp(confidence);
 
-        if (confidence < NavConfidence.Imported)
-            cost += distance * 1.5f;
+        float confidenceMultiplier;
+
+        if (confidence < NavConfidence.Weak)
+            confidenceMultiplier = 1.45f;
+        else if (confidence < NavConfidence.Imported)
+            confidenceMultiplier = 1.28f;
         else if (confidence < NavConfidence.NewLocal)
-            cost += distance * 0.65f;
+            confidenceMultiplier = 1.12f;
         else if (confidence >= NavConfidence.Trusted)
-            cost *= 0.86f;
-        else if (confidence >= NavConfidence.NewLocal)
-            cost *= 0.94f;
+            confidenceMultiplier = 0.92f;
+        else
+            confidenceMultiplier = 0.98f;
+
+        cost *= confidenceMultiplier;
 
         return MathF.Max(cost, distance * 0.75f);
     }
@@ -240,7 +246,7 @@ public static class NavPathfinder
             path[0]
         };
 
-        const float minDistance = 8.0f;
+        const float minDistance = 4.0f;
         Vector3 lastKept = path[0];
 
         for (int i = 1; i < path.Count - 1; i++)

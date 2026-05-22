@@ -37,6 +37,20 @@ public static partial class NavigationManager
     private static Vector3? LastMovementDirection;
     private static string? LastRecordedNodeId;
     private static uint LastTerritoryId;
-    private static string? LastPathStartNodeId;
-    private static uint LastPathTerritoryId;
+
+    private static TerritoryTransitionStore? Transitions;
+    private static bool TransitionsDirty;
+
+    private static TransitionSample? LastTransitionSample;
+    private static DateTime LastGroundMovementObservedAt = DateTime.MinValue;
+    private static DateTime LastCastObservedAt = DateTime.MinValue;
+
+    private sealed class TransitionSample
+    {
+        public uint TerritoryId { get; init; }
+        public Vector3 Position { get; init; }
+        public DateTime ObservedAt { get; init; }
+        public bool IsFlying { get; init; }
+    }
+
 }

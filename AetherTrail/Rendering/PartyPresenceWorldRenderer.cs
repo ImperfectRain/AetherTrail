@@ -13,7 +13,9 @@ public sealed class PartyPresenceWorldRenderer
         if (!this.Enabled)
             return;
 
-        if (!Plugin.Instance.Configuration.PartyPresenceMarkersEnabled)
+        if (!Plugin.Instance.Configuration.NetworkConsentAccepted ||
+            !Plugin.Instance.Configuration.PartyPresenceSyncEnabled ||
+            !Plugin.Instance.Configuration.PartyPresenceMarkersEnabled)
             return;
 
         uint territoryId = Plugin.ClientState.TerritoryType;
@@ -57,6 +59,7 @@ public sealed class PartyPresenceWorldRenderer
             drawList,
             position,
             presence.RotationRadians,
+            presence.DisplayColor.ToVector4(),
             alpha
         );
 
@@ -73,6 +76,7 @@ public sealed class PartyPresenceWorldRenderer
         ImDrawListPtr drawList,
         Vector3 basePosition,
         float rotationRadians,
+        Vector4 displayColor,
         float alpha)
     {
         Vector3 center = basePosition + new Vector3(0f, 2.15f, 0f);
@@ -106,9 +110,9 @@ public sealed class PartyPresenceWorldRenderer
         Vector3 left = center - right * radius;
         Vector3 rightPoint = center + right * radius;
 
-        uint mainColor = ImGui.ColorConvertFloat4ToU32(
-            new Vector4(1.0f, 0.1f, 0.85f, 0.95f * alpha)
-        );
+        displayColor.W = 0.95f * alpha;
+
+        uint mainColor = ImGui.ColorConvertFloat4ToU32(displayColor);
 
         uint shadowColor = ImGui.ColorConvertFloat4ToU32(
             new Vector4(0f, 0f, 0f, 0.75f * alpha)

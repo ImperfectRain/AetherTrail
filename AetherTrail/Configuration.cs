@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Configuration;
 using Dalamud.Plugin;
@@ -10,13 +9,16 @@ namespace AetherTrail;
 public class Configuration : IPluginConfiguration
 {
     public string SyncClientId { get; set; } = "";
-    public bool PartyPresenceMarkersEnabled { get; set; } = true;
+    public bool NetworkConsentAccepted { get; set; } = false;
+    public bool PartyPresenceSyncEnabled { get; set; } = false;
+    public bool PartyPresenceMarkersEnabled { get; set; } = false;
     public float PartyPresenceMaxDrawDistance { get; set; } = 300.0f;
+    public Vector4 PartyPresenceColor { get; set; } = new(1.0f, 0.2f, 0.85f, 1.0f);
 
     public string SyncServerUrl { get; set; } = "https://aethertrailsyncserver.loplop6754loplop.workers.dev";
     public string SyncRoomCode { get; set; } = "";
     public bool PartySyncEnabled { get; set; } = false;
-    public bool AutoSyncEnabled { get; set; } = true;
+    public bool AutoSyncEnabled { get; set; } = false;
     public int SyncIntervalSeconds { get; set; } = 15;
     public int GraphSyncIntervalSeconds { get; set; } = 90;
     public int PresenceMovingSyncIntervalSeconds { get; set; } = 5;
@@ -24,13 +26,6 @@ public class Configuration : IPluginConfiguration
     public float PresenceMovementThreshold { get; set; } = 1.5f;
     public float PresenceRotationThresholdRadians { get; set; } = 0.5f;
     public int Version { get; set; } = 1;
-
-    public bool ChatEnabled { get; set; } = false;
-    public bool ChatSystemDisabled { get; set; } = true;
-    public int ChatPollIntervalSeconds { get; set; } = 3;
-    public int ChatLocalMaxCharacters { get; set; } = 20000;
-    public int ChatMessageMaxCharacters { get; set; } = 500;
-    public List<string> MutedChatSenderIds { get; set; } = new();
 
     public bool RecordingEnabledByDefault { get; set; } = true;
     public bool OverlayEnabled { get; set; } = true;

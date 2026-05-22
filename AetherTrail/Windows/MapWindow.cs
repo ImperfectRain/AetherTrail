@@ -2,6 +2,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Windowing;
 using Lumina.Data.Files;
+using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,11 +57,14 @@ public sealed class MapWindow : Window, IDisposable
             ImGui.GetWindowPos() + ImGui.GetWindowSize()
         );
 
-        uint territoryId = Plugin.ClientState.TerritoryType;
-        var graph = NavigationManager.GetGraph(territoryId);
+        uint playerTerritoryId = Plugin.ClientState.TerritoryType;
         bool hasMapTransform = MapTransformService.TryGetCurrent(out var mapTransform);
+        uint displayTerritoryId = hasMapTransform && mapTransform.TerritoryId != 0
+            ? mapTransform.TerritoryId
+            : playerTerritoryId;
+        var graph = NavigationManager.GetGraph(displayTerritoryId);
 
-        ImGui.Text($"Territory: {territoryId}");
+        ImGui.Text($"Territory: {displayTerritoryId}");
         if (hasMapTransform)
         {
             ImGui.SameLine();
@@ -68,6 +72,8 @@ public sealed class MapWindow : Window, IDisposable
         }
 
         ImGui.Text($"Nodes: {graph.Nodes.Count}");
+        ImGui.SameLine();
+        ImGui.Text($"Transitions: {NavigationManager.GetTransitionMarkerCount(displayTerritoryId)}");
         ImGui.SliderFloat("Zoom", ref this.zoom, 0.1f, 20.0f);
 
         ImGui.Checkbox("Ground", ref this.showGround);
@@ -164,11 +170,19 @@ public sealed class MapWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
             ApplyMouseWheelZoom(canvasPos, canvasSize);
 
-        if (hasMapTransform && visibleNodes.Count > 0)
+        if (hasMapTransform)
         {
-            DrawGraph(drawList, visibleNodes, mapTransform, canvasPos, canvasSize);
-            DrawActiveRoute(drawList, mapTransform, canvasPos, canvasSize);
-            DrawPlayer(drawList, mapTransform, canvasPos, canvasSize);
+            if (visibleNodes.Count > 0)
+                DrawGraph(drawList, visibleNodes, mapTransform, canvasPos, canvasSize);
+
+            if (displayTerritoryId == playerTerritoryId)
+            {
+                DrawActiveRoute(drawList, mapTransform, canvasPos, canvasSize);
+                DrawPlayer(drawList, mapTransform, canvasPos, canvasSize);
+                DrawPartyPresenceDots(drawList, mapTransform, canvasPos, canvasSize);
+            }
+
+            DrawTransitionMarkers(drawList, displayTerritoryId, mapTransform, canvasPos, canvasSize);
         }
 
         drawList.PopClipRect();
@@ -341,6 +355,85 @@ public sealed class MapWindow : Window, IDisposable
         drawList.AddCircleFilled(playerPoint, 6f, playerColor);
     }
 
+    private void DrawTransitionMarkers(
+        ImDrawListPtr drawList,
+        uint territoryId,
+        MapTransformSnapshot transform,
+        Vector2 canvasPos,
+        Vector2 canvasSize)
+    {
+        var markers = NavigationManager.GetTransitionMapMarkers(territoryId);
+
+        if (markers.Count == 0)
+            return;
+
+        Vector2 mouse = ImGui.GetMousePos();
+        TerritoryTransitionMapMarker? hovered = null;
+        uint outlineColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.95f));
+        uint exitColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1.0f, 0.62f, 0.15f, 0.95f));
+        uint entryColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.2f, 0.95f, 0.65f, 0.95f));
+
+        foreach (var marker in markers)
+        {
+            Vector2 point = ToCanvas(marker.Position, transform, canvasPos, canvasSize);
+
+            if (!IsInsideCanvas(point, canvasPos, canvasSize))
+                continue;
+
+            drawList.AddCircleFilled(point, 9.0f, outlineColor);
+            drawList.AddCircleFilled(point, 6.75f, marker.IsSource ? exitColor : entryColor);
+            drawList.AddCircle(point, 10.5f, marker.IsSource ? exitColor : entryColor, 16, 2.0f);
+
+            if (IsInsideCanvas(mouse, canvasPos, canvasSize) &&
+                Vector2.DistanceSquared(mouse, point) <= 144f)
+            {
+                hovered = marker;
+            }
+        }
+
+        if (hovered == null)
+            return;
+
+        ImGui.BeginTooltip();
+        ImGui.Text(hovered.IsSource ? "Territory exit" : "Territory entry");
+        ImGui.Text($"{GetTerritoryLabel(hovered.SourceTerritoryId)} -> {GetTerritoryLabel(hovered.TargetTerritoryId)}");
+        ImGui.Text($"Observed: {Math.Max(1, hovered.Observations)}");
+        ImGui.EndTooltip();
+    }
+
+    private void DrawPartyPresenceDots(
+        ImDrawListPtr drawList,
+        MapTransformSnapshot transform,
+        Vector2 canvasPos,
+        Vector2 canvasSize)
+    {
+        var config = this.plugin.Configuration;
+
+        if (!config.NetworkConsentAccepted ||
+            !config.PartyPresenceSyncEnabled ||
+            !config.PartyPresenceMarkersEnabled)
+        {
+            return;
+        }
+
+        uint territoryId = Plugin.ClientState.TerritoryType;
+        var presences = PartyPresenceService.GetCurrentTerritorySnapshot(territoryId);
+        uint outlineColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.9f));
+
+        foreach (var presence in presences)
+        {
+            Vector2 point = ToCanvas(presence.Position.ToVector3(), transform, canvasPos, canvasSize);
+
+            if (!IsInsideCanvas(point, canvasPos, canvasSize))
+                continue;
+
+            uint color = ImGui.ColorConvertFloat4ToU32(presence.DisplayColor.ToVector4());
+
+            drawList.AddCircleFilled(point, 5.5f, outlineColor);
+            drawList.AddCircleFilled(point, 4.0f, color);
+        }
+    }
+
     private Vector2 ToCanvas(
         Vector3 world,
         MapTransformSnapshot transform,
@@ -383,6 +476,22 @@ public sealed class MapWindow : Window, IDisposable
                MathF.Min(a.X, b.X) <= right &&
                MathF.Max(a.Y, b.Y) >= top &&
                MathF.Min(a.Y, b.Y) <= bottom;
+    }
+
+    private static string GetTerritoryLabel(uint territoryId)
+    {
+        var territorySheet = Plugin.DataManager.GetExcelSheet<TerritoryType>();
+
+        if (territorySheet != null &&
+            territorySheet.TryGetRow(territoryId, out var territory))
+        {
+            string name = territory.PlaceName.Value.Name.ToString();
+
+            if (!string.IsNullOrWhiteSpace(name))
+                return $"{name} ({territoryId})";
+        }
+
+        return $"Territory {territoryId}";
     }
 
     private bool ShouldShowNode(NavNodeSnapshot node)

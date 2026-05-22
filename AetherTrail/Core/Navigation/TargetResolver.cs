@@ -4,8 +4,22 @@ public static class TargetResolver
 {
     public static bool TryGetTarget(out NavigationTarget target)
     {
-        if (MapFlagService.TryGetFlagPosition(out var flagPosition))
+        if (MapFlagService.TryGetFlagTarget(out var flagPosition, out uint flagTerritoryId))
         {
+            uint currentTerritoryId = Plugin.ClientState.TerritoryType;
+
+            if (flagTerritoryId != currentTerritoryId &&
+                !NavigationManager.TryGetTransitionToward(currentTerritoryId, flagTerritoryId, out flagPosition))
+            {
+                target = new NavigationTarget
+                {
+                    Type = NavigationTargetType.None,
+                    Label = "None"
+                };
+
+                return false;
+            }
+
             target = new NavigationTarget
             {
                 Type = NavigationTargetType.MapFlag,
@@ -16,8 +30,22 @@ public static class TargetResolver
             return true;
         }
 
-        if (QuestTargetService.TryGetQuestTarget(out var questPosition))
+        if (QuestTargetService.TryGetQuestTarget(out var questPosition, out uint questTerritoryId))
         {
+            uint currentTerritoryId = Plugin.ClientState.TerritoryType;
+
+            if (questTerritoryId != currentTerritoryId &&
+                !NavigationManager.TryGetTransitionToward(currentTerritoryId, questTerritoryId, out questPosition))
+            {
+                target = new NavigationTarget
+                {
+                    Type = NavigationTargetType.None,
+                    Label = "None"
+                };
+
+                return false;
+            }
+
             target = new NavigationTarget
             {
                 Type = NavigationTargetType.Quest,

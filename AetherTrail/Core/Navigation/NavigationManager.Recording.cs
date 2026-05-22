@@ -36,6 +36,11 @@ public static partial class NavigationManager
     {
         var graph = GetOrLoadGraph(territoryId);
 
+        if (!IsValidNodePosition(position))
+            return;
+
+        ObserveTerritoryTransition(territoryId, position);
+
         if (territoryId != LastTerritoryId)
         {
             LastRecordedPosition = null;
@@ -43,9 +48,6 @@ public static partial class NavigationManager
             LastRecordedNodeId = null;
             LastTerritoryId = territoryId;
         }
-
-        if (!IsValidNodePosition(position))
-            return;
 
         if (LastRecordedPosition.HasValue)
         {
@@ -152,5 +154,62 @@ public static partial class NavigationManager
     private static bool IsPlayerFlying()
     {
         return Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.InFlight];
+    }
+
+    private static void ObserveTerritoryTransition(uint territoryId, Vector3 position)
+    {
+        const float minMovementDistance = 0.75f;
+        const double recentMovementSeconds = 6.0;
+        const double recentCastSeconds = 20.0;
+
+        DateTime now = DateTime.UtcNow;
+        bool isFlying = IsPlayerFlying();
+
+        if (Plugin.Condition[Dalamud.Game.ClientState.Conditions.ConditionFlag.Casting])
+            LastCastObservedAt = now;
+
+        if (LastTransitionSample != null)
+        {
+            float sampleDistance = Vector3.Distance(LastTransitionSample.Position, position);
+            bool sameTerritory = LastTransitionSample.TerritoryId == territoryId;
+            bool ordinaryGroundMovement =
+                sameTerritory &&
+                !LastTransitionSample.IsFlying &&
+                !isFlying &&
+                sampleDistance >= minMovementDistance &&
+                sampleDistance <= TeleportResetDistance;
+
+            if (ordinaryGroundMovement)
+                LastGroundMovementObservedAt = now;
+
+            if (!sameTerritory)
+            {
+                bool hadRecentGroundMovement =
+                    (LastTransitionSample.ObservedAt - LastGroundMovementObservedAt).TotalSeconds <= recentMovementSeconds;
+
+                bool hadRecentCast =
+                    (now - LastCastObservedAt).TotalSeconds <= recentCastSeconds;
+
+                if (hadRecentGroundMovement &&
+                    !hadRecentCast &&
+                    !LastTransitionSample.IsFlying &&
+                    !isFlying)
+                {
+                    LearnTerritoryTransition(
+                        LastTransitionSample.TerritoryId,
+                        LastTransitionSample.Position,
+                        territoryId,
+                        position);
+                }
+            }
+        }
+
+        LastTransitionSample = new TransitionSample
+        {
+            TerritoryId = territoryId,
+            Position = position,
+            ObservedAt = now,
+            IsFlying = isFlying
+        };
     }
 }

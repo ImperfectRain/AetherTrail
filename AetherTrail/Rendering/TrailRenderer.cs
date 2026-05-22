@@ -42,11 +42,8 @@ public class TrailRenderer
         this.currentPath = path.Points;
 
         var newPath = ResampleTrailPath(
-            ChaikinSmoothTrailPath(
-                WeightedSmoothTrailPath(
-                    SimplifyTrailPath(this.currentPath)
-                ),
-                2
+            WeightedSmoothTrailPath(
+                SimplifyTrailPath(this.currentPath)
             ),
             3.0f
         );
@@ -285,8 +282,12 @@ public class TrailRenderer
             float directionDot = Vector3.Dot(dirA, dirB);
 
             bool almostStraight = directionDot > directionSimilarityThreshold;
+            bool keepElevationSample = HasMeaningfulElevationSample(
+                lastKept.Position,
+                current.Position,
+                next.Position);
 
-            if (!almostStraight || current.IsGraphPoint != next.IsGraphPoint)
+            if (!almostStraight || keepElevationSample || current.IsGraphPoint != next.IsGraphPoint)
             {
                 simplified.Add(current);
                 lastKept = current;
@@ -296,6 +297,27 @@ public class TrailRenderer
         simplified.Add(path[^1]);
 
         return simplified;
+    }
+
+    private static bool HasMeaningfulElevationSample(Vector3 previous, Vector3 current, Vector3 next)
+    {
+        Vector2 previousHorizontal = new(previous.X, previous.Z);
+        Vector2 currentHorizontal = new(current.X, current.Z);
+        Vector2 nextHorizontal = new(next.X, next.Z);
+
+        float fullDistance = Vector2.Distance(previousHorizontal, nextHorizontal);
+
+        if (fullDistance < 0.001f)
+            return false;
+
+        float progress = Math.Clamp(
+            Vector2.Distance(previousHorizontal, currentHorizontal) / fullDistance,
+            0.0f,
+            1.0f);
+
+        float expectedY = float.Lerp(previous.Y, next.Y, progress);
+
+        return MathF.Abs(current.Y - expectedY) >= 0.45f;
     }
 
     private List<TrailPoint> GetDisplayPath()
@@ -442,10 +464,19 @@ public class TrailRenderer
             TrailPoint current = path[i];
             TrailPoint next = path[i + 1];
 
+            if (previous.IsGraphPoint != current.IsGraphPoint ||
+                current.IsGraphPoint != next.IsGraphPoint)
+            {
+                result.Add(current);
+                continue;
+            }
+
             Vector3 blendedPosition =
-                previous.Position * 0.20f +
-                current.Position * 0.60f +
-                next.Position * 0.20f;
+                previous.Position * 0.15f +
+                current.Position * 0.70f +
+                next.Position * 0.15f;
+
+            blendedPosition.Y = current.Position.Y;
 
             result.Add(new TrailPoint
             {

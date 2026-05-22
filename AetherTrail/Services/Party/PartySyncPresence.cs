@@ -11,6 +11,7 @@ public sealed class PartySyncPresence
 
     public SyncVector3 Position { get; set; }
     public float RotationRadians { get; set; }
+    public SyncColor DisplayColor { get; set; } = SyncColor.Default;
 
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }

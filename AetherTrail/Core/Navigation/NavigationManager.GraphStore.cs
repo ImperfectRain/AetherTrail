@@ -26,6 +26,7 @@ public static partial class NavigationManager
         }
 
         DirtyGraphs.Clear();
+        SaveTransitions();
         LastFlushTime = DateTime.UtcNow;
     }
 
@@ -47,6 +48,7 @@ public static partial class NavigationManager
         }
 
         DirtyGraphs.Clear();
+        SaveTransitions();
     }
 
     public static int GetNodeCount(uint territoryId)
@@ -68,8 +70,11 @@ public static partial class NavigationManager
         LastMovementDirection = null;
         LastRecordedNodeId = null;
         LastTerritoryId = 0;
-        LastPathStartNodeId = null;
-        LastPathTerritoryId = 0;
+        Transitions = null;
+        TransitionsDirty = false;
+        LastTransitionSample = null;
+        LastGroundMovementObservedAt = DateTime.MinValue;
+        LastCastObservedAt = DateTime.MinValue;
     }
 
     private static NavGraph GetOrLoadGraph(uint territoryId)

@@ -59,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     private const double PathUpdateIntervalSeconds = 0.20;
     private Vector3? lastTargetPosition;
     private DateTime lastForcedPathRefresh = DateTime.MinValue;
+    private uint lastTrailTerritoryId;
 
     private const float TargetChangedDistance = 3.0f;
     private const float RouteDeviationDistance = 10.0f;
@@ -70,6 +71,7 @@ public sealed class Plugin : IDalamudPlugin
     private ConfigWindow ConfigWindow { get; init; }
     private MainWindow MainWindow { get; init; }
     private MapWindow MapWindow { get; init; }
+    private NetworkConsentWindow NetworkConsentWindow { get; init; }
     private readonly ToolsWindow toolsWindow;
 
     public TrailRenderer TrailRenderer => this.trailRenderer;
@@ -94,11 +96,13 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow = new ConfigWindow(this);
         MainWindow = new MainWindow(this, goatImagePath);
         MapWindow = new MapWindow(this);
+        NetworkConsentWindow = new NetworkConsentWindow(this);
         this.toolsWindow = new ToolsWindow(this);
 
         WindowSystem.AddWindow(ConfigWindow);
         WindowSystem.AddWindow(MainWindow);
         WindowSystem.AddWindow(MapWindow);
+        WindowSystem.AddWindow(NetworkConsentWindow);
         this.WindowSystem.AddWindow(this.toolsWindow);
 
         RegisterCommands();
@@ -123,7 +127,7 @@ public sealed class Plugin : IDalamudPlugin
             PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         });
 
-        DisposeStep("stop party sync", this.partySyncService.Dispose);
+        DisposeStep("stop network sync", this.partySyncService.Dispose);
         DisposeStep("clear queued graph mutations", GraphMutationQueue.Clear);
         DisposeStep("flush dirty graphs", NavigationManager.FlushDirtyGraphsImmediately);
         DisposeStep("clear party presence", PartyPresenceService.Clear);
@@ -247,6 +251,14 @@ public sealed class Plugin : IDalamudPlugin
 
         Vector3 playerPosition = player.Position;
         Vector3 targetPosition = target.Position;
+        uint territoryId = ClientState.TerritoryType;
+        bool territoryChanged = this.lastTrailTerritoryId != territoryId;
+
+        if (territoryChanged)
+        {
+            this.trailRenderer.ClearPath();
+            this.lastTargetPosition = null;
+        }
 
         bool targetChanged =
             !this.lastTargetPosition.HasValue ||
@@ -258,10 +270,8 @@ public sealed class Plugin : IDalamudPlugin
         bool forcedRefresh =
             (DateTime.UtcNow - this.lastForcedPathRefresh).TotalSeconds > ForcedPathRefreshSeconds;
 
-        if (!targetChanged && !playerOffRoute && !forcedRefresh)
+        if (!territoryChanged && !targetChanged && !playerOffRoute && !forcedRefresh)
             return;
-
-        uint territoryId = ClientState.TerritoryType;
 
         this.trailRenderer.SetPath(
             NavigationManager.GetPath(territoryId, playerPosition, targetPosition)
@@ -269,6 +279,7 @@ public sealed class Plugin : IDalamudPlugin
 
         this.lastTargetPosition = targetPosition;
         this.lastForcedPathRefresh = DateTime.UtcNow;
+        this.lastTrailTerritoryId = territoryId;
     }
 
     private void DrawUI()
@@ -530,15 +541,21 @@ public sealed class Plugin : IDalamudPlugin
 
     public void QueueManualPartySync()
     {
+        if (!this.Configuration.NetworkConsentAccepted)
+        {
+            ChatGui.Print("[AetherTrail] Accept the network disclaimer before syncing.");
+            return;
+        }
+
         if (!this.Configuration.PartySyncEnabled)
         {
-            ChatGui.Print("[AetherTrail] Party sync is disabled.");
+            ChatGui.Print("[AetherTrail] Graph sync is disabled.");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(this.Configuration.SyncRoomCode))
         {
-            ChatGui.Print("[AetherTrail] No party sync room code set.");
+            ChatGui.Print("[AetherTrail] No sync room code set.");
             return;
         }
 
@@ -550,7 +567,7 @@ public sealed class Plugin : IDalamudPlugin
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Manual AetherTrail party sync failed.");
+                Log.Error(ex, "Manual AetherTrail graph sync failed.");
                 ChatGui.Print($"[AetherTrail] Manual sync failed: {ex.Message}");
             }
         });
@@ -560,6 +577,18 @@ public sealed class Plugin : IDalamudPlugin
     {
         this.toolsWindow.Toggle();
     }
+
+    public void RequestNetworkFeatureEnable(Action enableAction)
+    {
+        if (this.Configuration.NetworkConsentAccepted)
+        {
+            enableAction();
+            return;
+        }
+
+        this.NetworkConsentWindow.Prompt(enableAction);
+    }
+
     public void ToggleConfigUi() => ConfigWindow.Toggle();
     public void ToggleMainUi() => MainWindow.Toggle();
 }

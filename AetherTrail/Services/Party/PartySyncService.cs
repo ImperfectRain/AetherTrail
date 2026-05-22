@@ -44,10 +44,7 @@ public sealed class PartySyncService : IDisposable
 
         var config = Plugin.Instance.Configuration;
 
-        if (!config.PartySyncEnabled)
-            return;
-
-        if (!config.AutoSyncEnabled)
+        if (!config.NetworkConsentAccepted)
             return;
 
         if (string.IsNullOrWhiteSpace(config.SyncRoomCode))
@@ -56,20 +53,29 @@ public sealed class PartySyncService : IDisposable
         uint territoryId = Plugin.ClientState.TerritoryType;
         DateTime now = DateTime.UtcNow;
 
-        PartySyncPresence? localPresence = CreateLocalPresenceSnapshot(territoryId);
-
-        if (Volatile.Read(ref this.presenceSyncInProgress) == 0 &&
-            ShouldSyncPresence(localPresence, territoryId, now, config))
+        if (config.PartyPresenceSyncEnabled)
         {
-            this.lastPresenceSync = now;
+            PartySyncPresence? localPresence = CreateLocalPresenceSnapshot(territoryId);
 
-            if (localPresence != null)
-                RememberPresenceSnapshot(localPresence, territoryId);
+            if (Volatile.Read(ref this.presenceSyncInProgress) == 0 &&
+                ShouldSyncPresence(localPresence, territoryId, now, config))
+            {
+                this.lastPresenceSync = now;
 
-            _ = SyncPresenceCurrentTerritory(localPresence, territoryId);
+                if (localPresence != null)
+                    RememberPresenceSnapshot(localPresence, territoryId);
+
+                _ = SyncPresenceCurrentTerritory(localPresence, territoryId);
+            }
+        }
+        else
+        {
+            PartyPresenceService.Clear();
         }
 
-        if (ShouldSyncGraph(now, config))
+        if (config.PartySyncEnabled &&
+            config.AutoSyncEnabled &&
+            ShouldSyncGraph(now, config))
         {
             this.lastGraphSync = now;
 
@@ -79,7 +85,9 @@ public sealed class PartySyncService : IDisposable
 
     public async Task SyncCurrentTerritory()
     {
-        if (this.disposed)
+        if (this.disposed ||
+            !Plugin.Instance.Configuration.NetworkConsentAccepted ||
+            !Plugin.Instance.Configuration.PartySyncEnabled)
             return;
 
         if (Interlocked.Exchange(ref this.graphSyncInProgress, 1) == 1)
@@ -156,7 +164,9 @@ public sealed class PartySyncService : IDisposable
 
     public async Task SyncPresenceNow()
     {
-        if (this.disposed)
+        if (this.disposed ||
+            !Plugin.Instance.Configuration.NetworkConsentAccepted ||
+            !Plugin.Instance.Configuration.PartyPresenceSyncEnabled)
             return;
 
         uint territoryId = Plugin.ClientState.TerritoryType;
@@ -186,6 +196,7 @@ public sealed class PartySyncService : IDisposable
             TerritoryId = territoryId,
             Position = SyncVector3.FromVector3(player.Position),
             RotationRadians = player.Rotation,
+            DisplayColor = SyncColor.FromVector4(Plugin.Instance.Configuration.PartyPresenceColor),
             UpdatedAtUtc = DateTime.UtcNow
         };
     }
@@ -202,7 +213,9 @@ public sealed class PartySyncService : IDisposable
         PartySyncPresence? localPresence,
         uint territoryId)
     {
-        if (this.disposed)
+        if (this.disposed ||
+            !Plugin.Instance.Configuration.NetworkConsentAccepted ||
+            !Plugin.Instance.Configuration.PartyPresenceSyncEnabled)
             return;
 
         if (localPresence == null)

@@ -20,9 +20,8 @@ Rendering code draws world-space overlays, trails, debug graph views, party mark
 
 ## Services
 
-- `Services/Chat` owns party chat message transport and persistence.
 - `Services/Map` owns map coordinate helpers and map flag integration.
-- `Services/Party` owns party sync orchestration and party presence state.
+- `Services/Party` owns graph sync orchestration and opt-in party presence state.
 - `Services/Quest` owns quest target lookup and quest-related game data access.
 - `Services/Sync` owns HTTP sync transport and sync packet models.
 - `Services/Ui` owns UI occlusion helpers used by renderers and windows.

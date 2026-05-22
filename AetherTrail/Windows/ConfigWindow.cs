@@ -129,5 +129,22 @@ public class ConfigWindow : Window, IDisposable
             config.GraphDebugDrawDistance = graphDebugDrawDistance;
             config.Save();
         }
+
+        ImGui.Separator();
+        ImGui.Text("Party Presence");
+
+        Vector4 partyPresenceColor = config.PartyPresenceColor;
+        if (ImGui.ColorEdit4("Synced marker color", ref partyPresenceColor))
+        {
+            config.PartyPresenceColor = partyPresenceColor;
+            config.Save();
+        }
+
+        bool partyPresenceMarkersEnabled = config.PartyPresenceMarkersEnabled;
+        if (ImGui.Checkbox("Show synced party markers", ref partyPresenceMarkersEnabled))
+        {
+            config.PartyPresenceMarkersEnabled = partyPresenceMarkersEnabled;
+            config.Save();
+        }
     }
 }

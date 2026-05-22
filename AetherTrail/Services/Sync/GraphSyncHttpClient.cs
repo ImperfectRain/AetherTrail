@@ -96,6 +96,9 @@ public static class GraphSyncHttpClient
 
     private static string GetValidatedBaseUrl()
     {
+        if (!Plugin.Instance.Configuration.NetworkConsentAccepted)
+            throw new InvalidOperationException("AetherTrail network consent is required before sync.");
+
         string configuredUrl = Plugin.Instance.Configuration.SyncServerUrl.Trim();
 
         if (!Uri.TryCreate(configuredUrl, UriKind.Absolute, out var uri))

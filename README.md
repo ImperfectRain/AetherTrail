@@ -6,7 +6,7 @@ AI has been used for documentation analysis, structure/code review, function rew
 
 Notice
 
-This plugin currently has optional networked party sync. Party sync connects to a configured sync server, uses a shared room code, and is off unless the user enables it. If you are uncomfortable with external sync features, do not enable party sync or do not install the plugin until the server side has been reviewed by someone more knowledgeable than I am.
+This plugin has optional networked sync features. Graph sync and party position sync connect to a configured sync server, use a shared room code, and stay off unless the user enables them after accepting the network disclaimer. If you are uncomfortable with external sync features, keep them disabled or do not install the plugin until the server side has been reviewed by someone more knowledgeable than I am.
 
 AetherTrail started as a way to draw world-space navigation toward quest and map-flag data without relying on another navigation plugin. It has grown into a personal navigation graph system. As you move through the overworld, the plugin records nodes, links them into paths, and slowly builds a local graph of where your character has actually traveled.
 
@@ -64,11 +64,11 @@ Export writes the current territory graph to the plugin config export folder. Im
 
 Importing is different from manually replacing files. AetherTrail attempts to merge useful incoming nodes, avoid duplicate nearby nodes, preserve existing local data, and clean up the result. This is intended to make graph sharing less destructive.
 
-### Party Sync
+### Network Sync
 
-Party sync is optional. A user can create or join a room code, then sync graph data with other users using the same room.
+Graph sync is optional. A user can create or join a room code, then sync graph data with other users using the same room.
 
-When enabled, party sync can upload and download graph data for the current territory, merge downloaded data into the local graph, and share lightweight party presence so synced players can appear in the world overlay.
+When enabled, graph sync can upload and download graph data for the current territory and merge downloaded data into the local graph. Party position sync is a separate opt-in feature. When enabled, it shares anonymous presence data so synced players can appear in the world overlay and on the AetherTrail map using their chosen marker colors.
 
 The feature is meant for friends, mentors, or small groups that want to build and improve navigation data together. It is not required for normal local use.
 
@@ -123,9 +123,7 @@ Most users should not need to touch every setting. They are exposed because the 
 
 Local graph recording does not require the sync server.
 
-Party sync is the networked part of the plugin. It sends graph and presence data to the configured sync server for the room code you enter. The room code is not strong security; it is a shared passkey for small-group coordination.
-
-Chat-related code exists in the repository from earlier experiments, but chat is currently disabled and not exposed through the plugin UI or commands. I do not currently consider chat a core AetherTrail feature.
+Graph sync and party position sync are the networked parts of the plugin. Graph sync sends graph data to the configured sync server for the room code you enter. Party position sync is separate and sends anonymous presence data only while it is enabled. The room code is not strong security; it is a shared passkey for small-group coordination.
 
 ## Current State
 
@@ -147,7 +145,7 @@ Currently implemented
 Still experimental
 
 - graph quality varies heavily by how much a zone has been traveled
-- party sync needs more privacy/security review
+- network sync needs more privacy/security review
 - route quality can still be rough in awkward terrain
 - visual presentation is functional but not final
 - cleanup tools are powerful and still somewhat tester-oriented
@@ -157,7 +155,7 @@ Still experimental
 - Improve route visuals so the trail feels more like a natural aether current and less like a debug line.
 - Continue improving confidence scoring so trusted routes, imported routes, risky routes, and locked routes are easier to reason about.
 - Add stronger review documentation for all network behavior and server-side data handling.
-- Decide whether party sync belongs in the final review build or should remain an optional/experimental feature.
+- Decide whether network sync belongs in the final review build or should remain an optional/experimental feature.
 - Provide optional starter graph files for users who want navigation help without participating in sync.
 - Improve map overlay polish, including clearer legends and better visual hierarchy.
 - Keep splitting large implementation files into smaller, easier-to-review systems.

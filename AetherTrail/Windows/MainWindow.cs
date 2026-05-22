@@ -60,22 +60,64 @@ public class MainWindow : Window, IDisposable
         }
 
         ImGui.Separator();
-        ImGui.Text("Party Sync");
+        ImGui.Text("Network Sync");
 
         var config = plugin.Configuration;
 
-        bool partySyncEnabled = config.PartySyncEnabled;
-        if (ImGui.Checkbox("Enable Party Sync", ref partySyncEnabled))
+        bool graphSyncEnabled = config.PartySyncEnabled;
+        if (ImGui.Checkbox("Enable Graph Sync", ref graphSyncEnabled))
         {
-            config.PartySyncEnabled = partySyncEnabled;
-            config.Save();
+            if (graphSyncEnabled)
+            {
+                this.plugin.RequestNetworkFeatureEnable(() =>
+                {
+                    config.PartySyncEnabled = true;
+                    config.Save();
+                });
+            }
+            else
+            {
+                config.PartySyncEnabled = false;
+                config.Save();
+            }
+        }
+
+        bool presenceSyncEnabled = config.PartyPresenceSyncEnabled;
+        if (ImGui.Checkbox("Share Party Position", ref presenceSyncEnabled))
+        {
+            if (presenceSyncEnabled)
+            {
+                this.plugin.RequestNetworkFeatureEnable(() =>
+                {
+                    config.PartyPresenceSyncEnabled = true;
+                    config.PartyPresenceMarkersEnabled = true;
+                    config.Save();
+                });
+            }
+            else
+            {
+                config.PartyPresenceSyncEnabled = false;
+                config.Save();
+                PartyPresenceService.Clear();
+            }
         }
 
         bool autoSyncEnabled = config.AutoSyncEnabled;
         if (ImGui.Checkbox("Auto Sync", ref autoSyncEnabled))
         {
-            config.AutoSyncEnabled = autoSyncEnabled;
-            config.Save();
+            if (autoSyncEnabled)
+            {
+                this.plugin.RequestNetworkFeatureEnable(() =>
+                {
+                    config.AutoSyncEnabled = true;
+                    config.Save();
+                });
+            }
+            else
+            {
+                config.AutoSyncEnabled = false;
+                config.Save();
+            }
         }
 
         string syncServerUrl = this.plugin.Configuration.SyncServerUrl;
@@ -105,28 +147,36 @@ public class MainWindow : Window, IDisposable
         if (ImGui.Button("Create Room"))
         {
             config.SyncRoomCode = PartySyncService.GenerateRoomCode();
-            config.PartySyncEnabled = true;
-            config.AutoSyncEnabled = true;
-            config.Save();
+            this.plugin.RequestNetworkFeatureEnable(() =>
+            {
+                config.PartySyncEnabled = true;
+                config.AutoSyncEnabled = true;
+                config.Save();
 
-            Plugin.ChatGui.Print($"AetherTrail party sync room created: {config.SyncRoomCode}");
+                Plugin.ChatGui.Print($"AetherTrail graph sync room created: {config.SyncRoomCode}");
+            });
         }
 
         if (ImGui.Button("Join Room"))
         {
-            config.PartySyncEnabled = true;
-            config.AutoSyncEnabled = true;
-            config.Save();
+            this.plugin.RequestNetworkFeatureEnable(() =>
+            {
+                config.PartySyncEnabled = true;
+                config.AutoSyncEnabled = true;
+                config.Save();
 
-            Plugin.ChatGui.Print($"AetherTrail joined sync room: {config.SyncRoomCode}");
+                Plugin.ChatGui.Print($"AetherTrail joined graph sync room: {config.SyncRoomCode}");
+            });
         }
 
         if (ImGui.Button("Leave Room"))
         {
             config.PartySyncEnabled = false;
+            config.PartyPresenceSyncEnabled = false;
             config.Save();
+            PartyPresenceService.Clear();
 
-            Plugin.ChatGui.Print("AetherTrail left party sync room.");
+            Plugin.ChatGui.Print("AetherTrail left sync room.");
         }
 
         ImGui.Text($"Current Room: {(string.IsNullOrWhiteSpace(config.SyncRoomCode) ? "None" : config.SyncRoomCode)}");

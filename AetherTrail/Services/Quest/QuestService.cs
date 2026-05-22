@@ -54,6 +54,36 @@ public static unsafe class QuestService
         }
     }
 
+    public static bool TryGetTrackedQuestLevelTarget(out uint territoryId, out Vector3 position)
+    {
+        territoryId = 0;
+        position = default;
+
+        if (TryGetPrimaryTrackedQuestWork(out var primaryQuestWork) &&
+            TryResolveQuestWorkTarget(primaryQuestWork, out territoryId, out position))
+        {
+            return true;
+        }
+
+        foreach (var questWork in GetAllTrackedQuestWorks())
+        {
+            if (primaryQuestWorkEquals(questWork))
+                continue;
+
+            if (TryResolveQuestWorkTarget(questWork, out territoryId, out position))
+                return true;
+        }
+
+        return false;
+
+        bool primaryQuestWorkEquals(QuestWork other)
+        {
+            return TryGetPrimaryTrackedQuestWork(out var primary) &&
+                   primary.QuestId == other.QuestId &&
+                   primary.Sequence == other.Sequence;
+        }
+    }
+
     private static bool TryResolveQuestWorkPosition(QuestWork questWork, uint currentTerritory, out Vector3 position)
     {
         position = default;
@@ -74,6 +104,20 @@ public static unsafe class QuestService
             return true;
 
         return false;
+    }
+
+    private static bool TryResolveQuestWorkTarget(QuestWork questWork, out uint territoryId, out Vector3 position)
+    {
+        territoryId = 0;
+        position = default;
+
+        if (!TryGetQuestRow(questWork.QuestId, out var quest))
+            return false;
+
+        if (TryGetQuestTodoTarget(quest, questWork.Sequence, exactSequenceOnly: true, out territoryId, out position))
+            return true;
+
+        return TryGetQuestTodoTarget(quest, questWork.Sequence, exactSequenceOnly: false, out territoryId, out position);
     }
 
     private static bool TryGetQuestTodoPosition(
@@ -100,6 +144,40 @@ public static unsafe class QuestService
                 if (level.Territory.RowId != currentTerritory)
                     continue;
 
+                position = new Vector3(level.X, level.Y, level.Z);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryGetQuestTodoTarget(
+        Quest quest,
+        byte sequence,
+        bool exactSequenceOnly,
+        out uint territoryId,
+        out Vector3 position)
+    {
+        territoryId = 0;
+        position = default;
+
+        foreach (var todo in quest.TodoParams)
+        {
+            if (exactSequenceOnly && todo.ToDoCompleteSeq != sequence)
+                continue;
+
+            foreach (var locationRef in todo.ToDoLocation)
+            {
+                if (locationRef.RowId == 0)
+                    continue;
+
+                var level = locationRef.Value;
+
+                if (level.Territory.RowId == 0)
+                    continue;
+
+                territoryId = level.Territory.RowId;
                 position = new Vector3(level.X, level.Y, level.Z);
                 return true;
             }
