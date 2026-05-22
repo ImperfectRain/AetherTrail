@@ -89,6 +89,16 @@ public static partial class NavigationManager
         return GetTransitionMapMarkers(territoryId).Count;
     }
 
+    public static IReadOnlyList<TerritoryTransition> GetTransitionSnapshot()
+    {
+        return GetOrLoadTransitions()
+            .Transitions
+            .OrderBy(transition => transition.SourceTerritoryId)
+            .ThenBy(transition => transition.TargetTerritoryId)
+            .ThenByDescending(transition => transition.Observations)
+            .ToList();
+    }
+
     private static void LearnTerritoryTransition(
         uint sourceTerritoryId,
         Vector3 sourcePosition,

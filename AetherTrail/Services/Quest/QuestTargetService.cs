@@ -30,13 +30,18 @@ public static unsafe class QuestTargetService
         if (QuestService.TryGetTrackedQuestLevelTarget(out territoryId, out position))
             return true;
 
-        territoryId = Plugin.ClientState.TerritoryType;
-        return TryGetQuestLinkPosition(out position);
+        if (TryGetQuestLinkPosition(out position, out territoryId))
+            return true;
+
+        position = default;
+        territoryId = 0;
+        return false;
     }
 
-    private static bool TryGetQuestLinkPosition(out Vector3 position)
+    private static bool TryGetQuestLinkPosition(out Vector3 position, out uint territoryId)
     {
         position = default;
+        territoryId = 0;
 
         uint questId = QuestService.GetTrackedQuestId();
 
@@ -48,21 +53,25 @@ public static unsafe class QuestTargetService
         if (agentMap == null)
             return false;
 
-        if (TryGetQuestLinkPosition(agentMap->MiniMapQuestLinkContainer, questId, out position))
+        if (TryGetQuestLinkPosition(agentMap->MiniMapQuestLinkContainer, questId, out position, out territoryId))
             return true;
 
-        if (TryGetQuestLinkPosition(agentMap->MapQuestLinkContainer, questId, out position))
+        if (TryGetQuestLinkPosition(agentMap->MapQuestLinkContainer, questId, out position, out territoryId))
             return true;
 
-        return TryGetLinkedMsqPosition(agentMap, out position);
+        return TryGetLinkedMsqPosition(agentMap, out position, out territoryId);
     }
 
-    private static bool TryGetQuestLinkPosition(QuestLinkContainer container, uint questId, out Vector3 position)
+    private static bool TryGetQuestLinkPosition(
+        QuestLinkContainer container,
+        uint questId,
+        out Vector3 position,
+        out uint territoryId)
     {
         position = default;
+        territoryId = 0;
 
         uint currentMapId = Plugin.ClientState.MapId;
-        uint currentTerritory = Plugin.ClientState.TerritoryType;
         int markerCount = Math.Min(container.MarkerCount, (ushort)container.Markers.Length);
 
         for (int i = 0; i < markerCount; i++)
@@ -78,7 +87,7 @@ public static unsafe class QuestTargetService
             if (marker.SourceMapId != 0 && marker.SourceMapId != currentMapId)
                 continue;
 
-            if (!TryGetPositionFromLevelId(marker.LevelId, currentTerritory, out position))
+            if (!TryGetPositionFromLevelId(marker.LevelId, out position, out territoryId))
                 continue;
 
             return true;
@@ -87,15 +96,17 @@ public static unsafe class QuestTargetService
         return false;
     }
 
-    private static bool TryGetLinkedMsqPosition(AgentMap* agentMap, out Vector3 position)
+    private static bool TryGetLinkedMsqPosition(
+        AgentMap* agentMap,
+        out Vector3 position,
+        out uint territoryId)
     {
         position = default;
-
-        uint currentTerritory = Plugin.ClientState.TerritoryType;
+        territoryId = 0;
 
         foreach (var marker in agentMap->MinimapMSQLinkedTooltipMarkers)
         {
-            if (!TryGetPositionFromLevelId(marker.LevelId, currentTerritory, out position))
+            if (!TryGetPositionFromLevelId(marker.LevelId, out position, out territoryId))
                 continue;
 
             return true;
@@ -104,9 +115,13 @@ public static unsafe class QuestTargetService
         return false;
     }
 
-    private static bool TryGetPositionFromLevelId(uint levelId, uint currentTerritory, out Vector3 position)
+    private static bool TryGetPositionFromLevelId(
+        uint levelId,
+        out Vector3 position,
+        out uint territoryId)
     {
         position = default;
+        territoryId = 0;
 
         var levelSheet = Plugin.DataManager.GetExcelSheet<Level>();
 
@@ -116,7 +131,9 @@ public static unsafe class QuestTargetService
         if (!levelSheet.TryGetRow(levelId, out var level))
             return false;
 
-        if (level.Territory.RowId != currentTerritory)
+        territoryId = level.Territory.RowId;
+
+        if (territoryId == 0)
             return false;
 
         position = new Vector3(
@@ -127,5 +144,4 @@ public static unsafe class QuestTargetService
 
         return true;
     }
-
 }

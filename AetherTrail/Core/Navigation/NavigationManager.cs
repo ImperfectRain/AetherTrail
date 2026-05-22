@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -42,6 +42,7 @@ public static partial class NavigationManager
     private static bool TransitionsDirty;
 
     private static TransitionSample? LastTransitionSample;
+    private static TransitionSample? LastGroundMovementSample;
     private static DateTime LastGroundMovementObservedAt = DateTime.MinValue;
     private static DateTime LastCastObservedAt = DateTime.MinValue;
 

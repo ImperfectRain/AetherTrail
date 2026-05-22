@@ -5,9 +5,10 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using System;
-using System.Threading.Tasks;
 using System.IO;
+using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace AetherTrail;
 
@@ -44,6 +45,9 @@ public sealed class Plugin : IDalamudPlugin
     private const string SyncPreviewCommandName = "/atrailsyncpreview";
     private const string MapCommandName = "/atrailmap";
     private const string ToolsCommandName = "/atrailtools";
+    private const string TransitionsCommandName = "/atrailtransitions";
+    private const string RouteTransitionCommandName = "/atrailtransitionroute";
+    private const string QuestDebugCommandName = "/atrailquestdebug";
 
     private bool trailEnabled;
     private bool recordingEnabled;
@@ -60,6 +64,9 @@ public sealed class Plugin : IDalamudPlugin
     private Vector3? lastTargetPosition;
     private DateTime lastForcedPathRefresh = DateTime.MinValue;
     private uint lastTrailTerritoryId;
+    private bool lastTargetUsedTerritoryTransition;
+    private uint lastTargetOriginalTerritoryId;
+    private uint lastTargetTransitionTargetTerritoryId;
 
     private const float TargetChangedDistance = 3.0f;
     private const float RouteDeviationDistance = 10.0f;
@@ -174,6 +181,9 @@ public sealed class Plugin : IDalamudPlugin
         AddCommand(SyncPreviewCommandName, OnSyncPreviewCommand, "Preview an AetherTrail sync packet before importing.");
         AddCommand(MapCommandName, OnMapCommand, "Open the AetherTrail graph map.");
         AddCommand(ToolsCommandName, OnToolsCommand, "Open the AetherTrail tools window.");
+        AddCommand(TransitionsCommandName, OnTransitionsCommand, "Print learned AetherTrail territory transitions.");
+        AddCommand(RouteTransitionCommandName, OnRouteTransitionCommand, "Route to the strongest known transition exit in the current territory.");
+        AddCommand(QuestDebugCommandName, OnQuestDebugCommand, "Print current AetherTrail quest target debug info.");
     }
 
     private static void AddCommand(string command, IReadOnlyCommandInfo.HandlerDelegate handler, string helpMessage)
@@ -205,6 +215,9 @@ public sealed class Plugin : IDalamudPlugin
             SplitCrossingsCommandName,
             CleanRedundantLinksCommandName,
             ToolsCommandName,
+            TransitionsCommandName,
+            RouteTransitionCommandName,
+            QuestDebugCommandName,
             "/atrailresetconfidence"
         })
         {
@@ -246,6 +259,9 @@ public sealed class Plugin : IDalamudPlugin
         {
             this.trailRenderer.ClearPath();
             this.lastTargetPosition = null;
+            this.lastTargetUsedTerritoryTransition = false;
+            this.lastTargetOriginalTerritoryId = 0;
+            this.lastTargetTransitionTargetTerritoryId = 0;
             return;
         }
 
@@ -258,11 +274,20 @@ public sealed class Plugin : IDalamudPlugin
         {
             this.trailRenderer.ClearPath();
             this.lastTargetPosition = null;
+            this.lastTargetUsedTerritoryTransition = false;
+            this.lastTargetOriginalTerritoryId = 0;
+            this.lastTargetTransitionTargetTerritoryId = 0;
         }
+
+        bool targetTransitionStateChanged =
+            this.lastTargetUsedTerritoryTransition != target.IsUsingTerritoryTransition ||
+            this.lastTargetOriginalTerritoryId != target.OriginalTerritoryId ||
+            this.lastTargetTransitionTargetTerritoryId != target.TransitionTargetTerritoryId;
 
         bool targetChanged =
             !this.lastTargetPosition.HasValue ||
-            Vector3.Distance(this.lastTargetPosition.Value, targetPosition) > TargetChangedDistance;
+            Vector3.Distance(this.lastTargetPosition.Value, targetPosition) > TargetChangedDistance ||
+            targetTransitionStateChanged;
 
         bool playerOffRoute =
             !this.trailRenderer.IsPlayerNearCurrentPath(playerPosition, RouteDeviationDistance);
@@ -277,7 +302,17 @@ public sealed class Plugin : IDalamudPlugin
             NavigationManager.GetPath(territoryId, playerPosition, targetPosition)
         );
 
+        if (target.IsUsingTerritoryTransition && targetTransitionStateChanged)
+        {
+            ChatGui.Print(
+                $"AetherTrail routing to known transition toward territory {target.TransitionTargetTerritoryId}."
+            );
+        }
+
         this.lastTargetPosition = targetPosition;
+        this.lastTargetUsedTerritoryTransition = target.IsUsingTerritoryTransition;
+        this.lastTargetOriginalTerritoryId = target.OriginalTerritoryId;
+        this.lastTargetTransitionTargetTerritoryId = target.TransitionTargetTerritoryId;
         this.lastForcedPathRefresh = DateTime.UtcNow;
         this.lastTrailTerritoryId = territoryId;
     }
@@ -475,6 +510,134 @@ public sealed class Plugin : IDalamudPlugin
         this.toolsWindow.Toggle();
     }
 
+    private void OnTransitionsCommand(string command, string args)
+    {
+        uint currentTerritoryId = ClientState.TerritoryType;
+        var transitions = NavigationManager.GetTransitionSnapshot();
+
+        var currentExits = transitions
+            .Where(transition => transition.SourceTerritoryId == currentTerritoryId)
+            .ToList();
+
+        var currentEntries = transitions
+            .Where(transition => transition.TargetTerritoryId == currentTerritoryId)
+            .ToList();
+
+        ChatGui.Print(
+            $"[AetherTrail Transitions] Total={transitions.Count}, " +
+            $"Current exits={currentExits.Count}, Current entries={currentEntries.Count}"
+        );
+
+        foreach (var transition in currentExits.Take(8))
+        {
+            ChatGui.Print(
+                $"[AetherTrail Exit] {transition.SourceTerritoryId} -> {transition.TargetTerritoryId}, " +
+                $"obs={Math.Max(1, transition.Observations)}, " +
+                $"source=({transition.SourcePosition.X:F1}, {transition.SourcePosition.Y:F1}, {transition.SourcePosition.Z:F1}), " +
+                $"target=({transition.TargetPosition.X:F1}, {transition.TargetPosition.Y:F1}, {transition.TargetPosition.Z:F1})"
+            );
+        }
+
+        foreach (var transition in currentEntries.Take(8))
+        {
+            ChatGui.Print(
+                $"[AetherTrail Entry] {transition.SourceTerritoryId} -> {transition.TargetTerritoryId}, " +
+                $"obs={Math.Max(1, transition.Observations)}, " +
+                $"source=({transition.SourcePosition.X:F1}, {transition.SourcePosition.Y:F1}, {transition.SourcePosition.Z:F1}), " +
+                $"target=({transition.TargetPosition.X:F1}, {transition.TargetPosition.Y:F1}, {transition.TargetPosition.Z:F1})"
+            );
+        }
+
+        if (currentExits.Count > 8 || currentEntries.Count > 8)
+            ChatGui.Print("[AetherTrail Transitions] Output limited to 8 exits and 8 entries for the current territory.");
+    }
+
+    private void OnRouteTransitionCommand(string command, string args)
+    {
+        var player = ObjectTable.LocalPlayer;
+
+        if (player == null)
+        {
+            ChatGui.Print("[AetherTrail Transitions] Player not found.");
+            return;
+        }
+
+        uint currentTerritoryId = ClientState.TerritoryType;
+
+        var bestExit = NavigationManager.GetTransitionSnapshot()
+            .Where(transition => transition.SourceTerritoryId == currentTerritoryId)
+            .OrderByDescending(transition => transition.Observations)
+            .ThenByDescending(transition => transition.LastObservedUtc)
+            .FirstOrDefault();
+
+        if (bestExit == null)
+        {
+            ChatGui.Print($"[AetherTrail Transitions] No known exits for territory {currentTerritoryId}.");
+            return;
+        }
+
+        this.trailEnabled = true;
+        this.trailRenderer.Enabled = true;
+
+        this.trailRenderer.SetPath(
+            NavigationManager.GetPath(
+                currentTerritoryId,
+                player.Position,
+                bestExit.SourcePosition
+            )
+        );
+
+        this.lastTargetPosition = bestExit.SourcePosition;
+        this.lastTargetUsedTerritoryTransition = true;
+        this.lastTargetOriginalTerritoryId = bestExit.TargetTerritoryId;
+        this.lastTargetTransitionTargetTerritoryId = bestExit.TargetTerritoryId;
+        this.lastForcedPathRefresh = DateTime.UtcNow;
+        this.lastTrailTerritoryId = currentTerritoryId;
+
+        ChatGui.Print(
+            $"[AetherTrail Transitions] Routing to exit {bestExit.SourceTerritoryId} -> {bestExit.TargetTerritoryId}, " +
+            $"obs={Math.Max(1, bestExit.Observations)}."
+        );
+    }
+
+    private void OnQuestDebugCommand(string command, string args)
+    {
+        uint currentTerritoryId = ClientState.TerritoryType;
+
+        bool questFound = QuestTargetService.TryGetQuestTarget(
+            out Vector3 questPosition,
+            out uint questTerritoryId
+        );
+
+        bool resolverFound = TargetResolver.TryGetTarget(out var resolvedTarget);
+
+        ChatGui.Print(
+            $"[AetherTrail Quest Debug] currentTerritory={currentTerritoryId}, " +
+            $"questFound={questFound}, questTerritory={questTerritoryId}, " +
+            $"questPos=({questPosition.X:F1}, {questPosition.Y:F1}, {questPosition.Z:F1})"
+        );
+
+        ChatGui.Print(
+            $"[AetherTrail Quest Debug] resolverFound={resolverFound}, " +
+            $"type={resolvedTarget.Type}, label={resolvedTarget.Label}, " +
+            $"position=({resolvedTarget.Position.X:F1}, {resolvedTarget.Position.Y:F1}, {resolvedTarget.Position.Z:F1}), " +
+            $"originalTerritory={resolvedTarget.OriginalTerritoryId}, " +
+            $"transitionTarget={resolvedTarget.TransitionTargetTerritoryId}, " +
+            $"usingTransition={resolvedTarget.IsUsingTerritoryTransition}"
+        );
+
+        bool hasTransition = NavigationManager.TryGetTransitionToward(
+            currentTerritoryId,
+            questTerritoryId,
+            out Vector3 transitionPosition
+        );
+
+        ChatGui.Print(
+            $"[AetherTrail Quest Debug] transition {currentTerritoryId}->{questTerritoryId}: " +
+            $"found={hasTransition}, " +
+            $"pos=({transitionPosition.X:F1}, {transitionPosition.Y:F1}, {transitionPosition.Z:F1})"
+        );
+    }
     public void ExportCurrentTerritoryGraph()
     {
         uint territoryId = ClientState.TerritoryType;

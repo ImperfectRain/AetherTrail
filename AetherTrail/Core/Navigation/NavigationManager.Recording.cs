@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -158,7 +158,7 @@ public static partial class NavigationManager
 
     private static void ObserveTerritoryTransition(uint territoryId, Vector3 position)
     {
-        const float minMovementDistance = 0.75f;
+        const float minMovementDistance = 0.05f;
         const double recentMovementSeconds = 6.0;
         const double recentCastSeconds = 20.0;
 
@@ -172,6 +172,7 @@ public static partial class NavigationManager
         {
             float sampleDistance = Vector3.Distance(LastTransitionSample.Position, position);
             bool sameTerritory = LastTransitionSample.TerritoryId == territoryId;
+
             bool ordinaryGroundMovement =
                 sameTerritory &&
                 !LastTransitionSample.IsFlying &&
@@ -180,24 +181,64 @@ public static partial class NavigationManager
                 sampleDistance <= TeleportResetDistance;
 
             if (ordinaryGroundMovement)
+            {
                 LastGroundMovementObservedAt = now;
+
+                LastGroundMovementSample = new TransitionSample
+                {
+                    TerritoryId = territoryId,
+                    Position = position,
+                    ObservedAt = now,
+                    IsFlying = isFlying
+                };
+            }
 
             if (!sameTerritory)
             {
                 bool hadRecentGroundMovement =
-                    (LastTransitionSample.ObservedAt - LastGroundMovementObservedAt).TotalSeconds <= recentMovementSeconds;
+                    LastGroundMovementSample != null &&
+                    LastGroundMovementSample.TerritoryId == LastTransitionSample.TerritoryId &&
+                    (now - LastGroundMovementObservedAt).TotalSeconds <= recentMovementSeconds;
 
                 bool hadRecentCast =
                     (now - LastCastObservedAt).TotalSeconds <= recentCastSeconds;
 
-                if (hadRecentGroundMovement &&
+                TransitionSample sourceSample = hadRecentGroundMovement && LastGroundMovementSample != null
+                    ? LastGroundMovementSample
+                    : LastTransitionSample;
+
+                float sourceToEntryDistance = Vector3.Distance(sourceSample.Position, position);
+
+                // Keep this conservative. A large coordinate discontinuity with no recent walking
+                // is probably teleport/return/duty/ferry-style travel, not a physical zone line.
+                bool likelyPhysicalZoneLine =
+                    hadRecentGroundMovement ||
+                    sourceToEntryDistance <= TeleportResetDistance;
+
+                bool canLearnTransition =
+                    likelyPhysicalZoneLine &&
                     !hadRecentCast &&
-                    !LastTransitionSample.IsFlying &&
-                    !isFlying)
+                    !sourceSample.IsFlying &&
+                    !isFlying;
+
+                Plugin.Log.Information(
+                    "[AetherTrail Transition Debug] Territory changed " +
+                    $"{sourceSample.TerritoryId} -> {territoryId}. " +
+                    $"canLearn={canLearnTransition}, " +
+                    $"recentMove={hadRecentGroundMovement}, " +
+                    $"recentCast={hadRecentCast}, " +
+                    $"wasFlying={sourceSample.IsFlying}, " +
+                    $"isFlying={isFlying}, " +
+                    $"source=({sourceSample.Position.X:F2}, {sourceSample.Position.Y:F2}, {sourceSample.Position.Z:F2}), " +
+                    $"target=({position.X:F2}, {position.Y:F2}, {position.Z:F2}), " +
+                    $"sourceToEntryDistance={sourceToEntryDistance:F2}"
+                );
+
+                if (canLearnTransition)
                 {
                     LearnTerritoryTransition(
-                        LastTransitionSample.TerritoryId,
-                        LastTransitionSample.Position,
+                        sourceSample.TerritoryId,
+                        sourceSample.Position,
                         territoryId,
                         position);
                 }
