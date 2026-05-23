@@ -5,7 +5,7 @@
     "Punchline": "Community-learned navigation trails for FFXIV.",
     "Description": "AetherTrail records player movement into a local navigation graph, renders trail guidance to map flags or quest targets, and supports explicit opt-in room-based graph and party presence sync with network features disabled by default.",
     "ApplicableVersion": "any",
-    "AssemblyVersion": "0.1.1.0",
+    "AssemblyVersion": "0.1.2.",
     "Tags": [
         "utility",
         "navigation",
